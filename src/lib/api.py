@@ -143,8 +143,7 @@ async def download_data_file(file_path: str) -> FileResponse:
     return FileResponse(path, filename=path.name, media_type=media or "application/octet-stream")
 
 
-@router.post("/insert", response_model=AsyncTaskCreated)
-async def insert(payload: InsertRequest, response: Response) -> AsyncTaskCreated:
+async def _enqueue_insert(payload: InsertRequest, response: Response) -> AsyncTaskCreated:
     response.status_code = status.HTTP_202_ACCEPTED
     job_id = task_manager.create_job()
 
@@ -162,8 +161,19 @@ async def insert(payload: InsertRequest, response: Response) -> AsyncTaskCreated
     return AsyncTaskCreated(job_id=job_id)
 
 
-@router.post("/predict", response_model=AsyncTaskCreated)
-async def predict(payload: PredictRequest, response: Response) -> AsyncTaskCreated:
+@router.post("/insert", response_model=AsyncTaskCreated)
+async def insert(payload: InsertRequest, response: Response) -> AsyncTaskCreated:
+    """Legacy route kept for backwards compatibility."""
+    return await _enqueue_insert(payload, response)
+
+
+@router.post("/register", response_model=AsyncTaskCreated)
+async def register(payload: InsertRequest, response: Response) -> AsyncTaskCreated:
+    """Assignment route alias for identity registration."""
+    return await _enqueue_insert(payload, response)
+
+
+async def _enqueue_predict(payload: PredictRequest, response: Response) -> AsyncTaskCreated:
     response.status_code = status.HTTP_202_ACCEPTED
     job_id = task_manager.create_job()
 
@@ -174,6 +184,18 @@ async def predict(payload: PredictRequest, response: Response) -> AsyncTaskCreat
 
     task_manager.schedule(job_id, _process())
     return AsyncTaskCreated(job_id=job_id)
+
+
+@router.post("/predict", response_model=AsyncTaskCreated)
+async def predict(payload: PredictRequest, response: Response) -> AsyncTaskCreated:
+    """Legacy route kept for backwards compatibility."""
+    return await _enqueue_predict(payload, response)
+
+
+@router.post("/inference", response_model=AsyncTaskCreated)
+async def inference(payload: PredictRequest, response: Response) -> AsyncTaskCreated:
+    """Assignment route alias for prediction/inference."""
+    return await _enqueue_predict(payload, response)
 
 
 @router.get("/status/{job_id}", response_model=StatusResponse)
