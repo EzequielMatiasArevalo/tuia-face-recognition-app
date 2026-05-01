@@ -4,6 +4,11 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from PIL import Image
+
+import cv2
+import numpy as np
+from insightface.app import FaceAnalysis
 
 class EmbeddingRecord(BaseModel):
     id_imagen: str
@@ -28,6 +33,31 @@ class AlignedFace(BaseModel):
     keypoints: Any
     image: Any
     embedding: Optional[list[float]] = None
+
+def process_and_align(img_pil: Image.Image) -> list[AlignedFace]:
+
+    app = FaceAnalysis(providers=['CPUExecutionProvider'])
+    app.prepare(ctx_id=0, det_size=(640, 640)) 
+    cv2_img = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+    faces = app.get(cv2_img)
+    
+    aligned_results = []
+    
+    for face in faces:
+        face_rgb = cv2.cvtColor(face.norm_face, cv2.COLOR_BGR2RGB)
+        aligned_image_pil = Image.fromarray(face_rgb)
+        
+
+        aligned_face = AlignedFace(
+            bbox=face.bbox,
+            keypoints=face.kps,
+            image=aligned_image_pil, 
+            embedding=face.embedding.tolist()
+        )
+        
+        aligned_results.append(aligned_face)
+        
+    return aligned_results
 
 
 class PredictRequest(BaseModel):
