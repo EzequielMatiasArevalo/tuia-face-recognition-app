@@ -1,0 +1,43 @@
+# Repo raíz = carpeta donde vive este archivo (tuia-face-recognition-app).
+# Si el remoto es un monorepo, ajustá working-directory y rutas de los steps.
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Pytest (schemas + API con mocks)
+        run: python -m pytest tests/ -q --tb=short
+
+      - name: docker compose config
+        run: docker compose config
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Docker build (backend)
+        run: docker build -f Dockerfile -t tuia-backend:ci .
