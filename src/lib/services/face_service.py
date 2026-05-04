@@ -30,8 +30,14 @@ class FaceService:
         self.similarity_metric = similarity_metric
         self.similarity_threshold = similarity_threshold
         self.face_size = face_size
-        self.model: any = self._load_model(model_path)
         self.output_path = output_path
+        
+        try:
+            self.model: any = self._load_model(model_path)
+        except Exception as e:
+            logger.error(f"CRITICAL: Failed to load model from {model_path}: {e}")
+            logger.error("The service will start but face recognition features will fail.")
+            self.model = None
 
         os.makedirs(self.output_path, exist_ok=True)
 

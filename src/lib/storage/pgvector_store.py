@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 
 from pgvector.psycopg import register_vector
 from psycopg import connect
@@ -22,18 +23,30 @@ class PgVectorEmbeddingStore:
         embedding_dim: int = 512,
     ) -> None:
         self.embedding_dim = embedding_dim
-        self.conn = connect(
+        self.conn = self._connect_with_retry(
             host=host,
             port=port,
             dbname=dbname,
             user=user,
             password=password,
-            autocommit=True,
         )
         with self.conn.cursor() as cur:
             cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
         register_vector(self.conn)
         self._ensure_schema()
+
+    def _connect_with_retry(self, **kwargs):
+        max_retries = 10
+        retry_delay = 2
+        for i in range(max_retries):
+            try:
+                return connect(autocommit=True, **kwargs)
+            except Exception as e:
+                if i == max_retries - 1:
+                    logger.error(f"Could not connect to Postgres after {max_retries} attempts: {e}")
+                    raise
+                logger.warning(f"Postgres connection failed (attempt {i+1}/{max_retries}), retrying in {retry_delay}s... Error: {e}")
+                time.sleep(retry_delay)
 
     def _ensure_schema(self) -> None:
         expected_type = f"vector({self.embedding_dim})"
