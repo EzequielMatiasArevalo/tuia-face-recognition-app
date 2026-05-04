@@ -79,27 +79,58 @@ class FaceService:
 
     def detect_faces(self, image: np.ndarray) -> list[tuple[int, int, int, int]]:
         """
-        Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
-        Return a list of tuples with the coordinates of the faces detected in the image.
+        Detecta caras con MTCNN (facenet_pytorch). Devuelve boxes (x1,y1,x2,y2)
+        y cachea los 5 keypoints por cara para que align_face pueda usarlos.
         """
-        raise NotImplementedError("Not implemented")
+        from facenet_pytorch import MTCNN
+        from PIL import Image as PILImage
+        if not hasattr(self, '_mtcnn'):
+            self._mtcnn = MTCNN(keep_all=True, device='cpu', post_process=False)
+        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        boxes, _, landmarks = self._mtcnn.detect(PILImage.fromarray(rgb), landmarks=True)
+        if boxes is None:
+            self._landmarks_cache = {}
+            return []
+        self._landmarks_cache = {
+            (int(b[0]), int(b[1]), int(b[2]), int(b[3])): lm
+            for b, lm in zip(boxes, landmarks)
+        }
+        return list(self._landmarks_cache.keys())
 
 
     def align_face(
         self, image: np.ndarray, box: tuple[int, int, int, int]
     ) -> AlignedFace:
         """
-        Crop using box (x1, y1, x2, y2) and run FaceAnalysis on the crop.
-        Return an AlignedFace object.
+        Alineacion geometrica: rota la imagen para que los ojos queden horizontales
+        usando los keypoints cacheados por detect_faces. Luego recorta y redimensiona.
         """
-        raise NotImplementedError("Not implemented")
+        kps = getattr(self, '_landmarks_cache', {}).get(tuple(box))
+        if kps is not None:
+            left_eye, right_eye = kps[0], kps[1]
+            angle  = np.degrees(np.arctan2(right_eye[1] - left_eye[1], right_eye[0] - left_eye[0]))
+            center = (float((left_eye[0] + right_eye[0]) / 2), float((left_eye[1] + right_eye[1]) / 2))
+            M      = cv2.getRotationMatrix2D(center, angle, 1.0)
+            h, w   = image.shape[:2]
+            rotated = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_LINEAR)
+        else:
+            rotated = image
+        x1, y1, x2, y2 = self._clip_xyxy(*box, image.shape[0], image.shape[1])
+        crop = cv2.resize(rotated[y1:y2, x1:x2], (self.face_size, self.face_size))
+        return AlignedFace(image=crop, bbox=list(box), keypoints=kps.tolist() if kps is not None else None)
 
     def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
         """
         Extract embedding from face.
         Return a list of floats representing the embedding of the face.
         """
-        raise NotImplementedError("Not implemented")
+        img    = cv2.cvtColor(face.image, cv2.COLOR_BGR2RGB)
+        tensor = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0
+        tensor = ((tensor - 0.5) / 0.5).unsqueeze(0)
+        with torch.no_grad():
+            emb = self.model(tensor)
+        emb = emb / emb.norm()
+        return emb.squeeze().tolist()
         
     def _cosine(self, a: np.ndarray, b: np.ndarray) -> float:
         denom = np.linalg.norm(a) * np.linalg.norm(b)
