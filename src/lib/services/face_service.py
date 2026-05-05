@@ -82,7 +82,34 @@ class FaceService:
         Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
         Return a list of tuples with the coordinates of the faces detected in the image.
         """
-        raise NotImplementedError("Not implemented")
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+        face_cascade = cv2.CascadeClassifier(
+            cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        )
+
+        faces = face_cascade.detectMultiScale(
+            gray,
+            scaleFactor=1.05,
+            minNeighbors=6,
+            minSize=(80, 80),
+        )
+
+        result = []
+        h, w = image.shape[:2]
+        min_area = max(80 * 80, int(h * w * 0.01))
+
+        for (x, y, fw, fh) in faces:
+            area = fw * fh
+            if area < min_area:
+                continue
+
+            x1, y1 = int(x), int(y)
+            x2, y2 = int(x + fw), int(y + fh)
+            result.append((x1, y1, x2, y2))
+
+        result.sort(key=lambda box: (box[2] - box[0]) * (box[3] - box[1]), reverse=True)
+        return result
 
 
     def align_face(
@@ -92,14 +119,54 @@ class FaceService:
         Crop using box (x1, y1, x2, y2) and run FaceAnalysis on the crop.
         Return an AlignedFace object.
         """
-        raise NotImplementedError("Not implemented")
+        x1, y1, x2, y2 = box
+        h, w = image.shape[:2]
+        x1, y1, x2, y2 = self._clip_xyxy(x1, y1, x2, y2, h, w)
+
+        face_img = image[y1:y2, x1:x2]
+        face_img = cv2.resize(face_img, (self.face_size, self.face_size))
+
+        return AlignedFace(
+            bbox=np.array([x1, y1, x2, y2]),
+            keypoints=np.empty((0, 2), dtype=np.int32),
+            image=face_img,
+            embedding=None,
+        )
 
     def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
         """
         Extract embedding from face.
         Return a list of floats representing the embedding of the face.
         """
-        raise NotImplementedError("Not implemented")
+        face_image = face.image
+        rgb = cv2.cvtColor(face_image, cv2.COLOR_BGR2RGB)
+
+        tensor = torch.from_numpy(rgb).permute(2, 0, 1).float() / 255.0
+        tensor = tensor.unsqueeze(0)
+
+        device = next(self.model.parameters()).device
+        tensor = tensor.to(device)
+
+        self.model.eval()
+        with torch.no_grad():
+            x = self.model.conv1(tensor)
+            x = self.model.bn1(x)
+            x = self.model.relu(x)
+            x = self.model.maxpool(x)
+
+            x = self.model.layer1(x)
+            x = self.model.layer2(x)
+            x = self.model.layer3(x)
+            x = self.model.layer4(x)
+            x = self.model.avgpool(x)
+            x = torch.flatten(x, 1)
+
+        embedding = x.squeeze(0).cpu().numpy().astype(np.float32)
+        norm = np.linalg.norm(embedding)
+        if norm > 0:
+            embedding = embedding / norm
+
+        return embedding.tolist()
         
     def _cosine(self, a: np.ndarray, b: np.ndarray) -> float:
         denom = np.linalg.norm(a) * np.linalg.norm(b)
