@@ -170,21 +170,30 @@ class FaceService:
             image_size=self.face_size,
         )
 
+        # Guardamos el embedding ya calculado por InsightFace.
+        # Esto evita volver a detectar una cara dentro del recorte alineado.
+        if not hasattr(self, "_embedding_cache"):
+            self._embedding_cache = {}
+
+        self._embedding_cache[(x1, y1, x2, y2)] = selected_face.embedding.astype(np.float32)
+
         return AlignedFace(
             image=aligned_image,
             bbox=[x1, y1, x2, y2],
             keypoints=selected_face.kps.tolist(),
         )
 
+
     def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
-        detector = self._get_face_detector()
-        faces = detector.get(face.image)
+        bbox = tuple(face.bbox)
 
-        if len(faces) == 0:
-            raise ValueError("No face detected in aligned image.")
+        if not hasattr(self, "_embedding_cache"):
+            raise ValueError("Embedding cache is not initialized.")
 
-        best_face = max(faces, key=lambda f: f.det_score)
-        embedding = best_face.embedding
+        if bbox not in self._embedding_cache:
+            raise ValueError(f"No embedding found for aligned face bbox: {bbox}")
+
+        embedding = self._embedding_cache[bbox]
 
         return embedding.astype(np.float32).tolist()
 
