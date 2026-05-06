@@ -130,10 +130,22 @@ class PgVectorEmbeddingStore:
                 """
                 SELECT id_imagen, embedding, path, etiqueta, metadata
                 FROM embeddings
-                ORDER BY embedding <=> %s
+                ORDER BY embedding <=> %s::vector
                 LIMIT %s
                 """,
                 (query, k),
             )
             rows = cur.fetchall()
-        return [EmbeddingRecord.model_validate(row) for row in rows]
+
+        records: list[EmbeddingRecord] = []
+        for row in rows:
+            records.append(
+                EmbeddingRecord(
+                    id_imagen=row[0],
+                    embedding=list(row[1]),
+                    path=row[2],
+                    etiqueta=row[3],
+                    metadata=row[4] if isinstance(row[4], dict) else json.loads(row[4]),
+                )
+            )
+        return records

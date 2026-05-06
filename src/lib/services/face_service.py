@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 import torch
 import onnxruntime
+from facenet_pytorch import MTCNN, InceptionResnetV1
 from lib.schemas import EmbeddingRecord, FaceDetection, PredictResult, AlignedFace
 from lib.storage.base import EmbeddingStoreProtocol
 import os 
@@ -31,6 +32,8 @@ class FaceService:
         self.similarity_threshold = similarity_threshold
         self.face_size = face_size
         self.output_path = output_path
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.mtcnn = MTCNN(image_size=160, margin=20, device=self.device, post_process=True)
         
         try:
             self.model: any = self._load_model(model_path)
@@ -68,10 +71,20 @@ class FaceService:
     def _load_model(self, model_path: Path) -> any:
         mp = Path(model_path)
         if not mp.exists():
-            raise ValueError(f"Model path does not exist: {model_path}")
+            logger.warning(f"Model path does not exist: {model_path}. Loading default InceptionResnetV1.")
+            model = InceptionResnetV1(pretrained='vggface2', classify=False).to(self.device)
+            model.eval()
+            return model
+            
         suf = mp.suffix.lower()
         if suf == ".pth":
-            return torch.load(mp, map_location="cpu", weights_only=False)
+            model = InceptionResnetV1(pretrained=None, classify=False).to(self.device)
+            state_dict = torch.load(mp, map_location=self.device)
+            # Usamos strict=False porque el .pth guardó el head, pero para extraer 
+            # embeddings solo usamos el backbone (classify=False).
+            model.load_state_dict(state_dict, strict=False)
+            model.eval()
+            return model
         if suf == ".onnx":
             return onnxruntime.InferenceSession(str(mp))
         raise ValueError(f"Unsupported model format (expected .pth or .onnx): {model_path}")
@@ -84,28 +97,51 @@ class FaceService:
         return image
 
     def detect_faces(self, image: np.ndarray) -> list[tuple[int, int, int, int]]:
-        """
-        Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
-        Return a list of tuples with the coordinates of the faces detected in the image.
-        """
-        raise NotImplementedError("Not implemented")
-
+        img_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        boxes, probs, landmarks = self.mtcnn.detect(img_rgb, landmarks=True)
+        
+        if boxes is None:
+            return []
+            
+        results = []
+        for box in boxes:
+            x1, y1, x2, y2 = [int(b) for b in box]
+            x1, y1, x2, y2 = self._clip_xyxy(x1, y1, x2, y2, image.shape[0], image.shape[1])
+            results.append((x1, y1, x2, y2))
+        return results
 
     def align_face(
         self, image: np.ndarray, box: tuple[int, int, int, int]
     ) -> AlignedFace:
-        """
-        Crop using box (x1, y1, x2, y2) and run FaceAnalysis on the crop.
-        Return an AlignedFace object.
-        """
-        raise NotImplementedError("Not implemented")
+        x1, y1, x2, y2 = box
+        crop = image[y1:y2, x1:x2]
+        crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+        
+        # Redimensionar al tamaño que espera InceptionResnetV1
+        crop_resized = cv2.resize(crop_rgb, (160, 160))
+        
+        # En una versión más avanzada aquí usarías norm_crop de InsightFace
+        # con los landmarks reales. Por ahora usamos el crop directo.
+        return AlignedFace(
+            bbox=list(box),
+            keypoints=None,
+            image=crop_resized
+        )
 
     def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
-        """
-        Extract embedding from face.
-        Return a list of floats representing the embedding of the face.
-        """
-        raise NotImplementedError("Not implemented")
+        if self.model is None:
+            return []
+            
+        # Normalización manual que simula el post_process=True de MTCNN
+        # (imagen - 127.5) / 128.0
+        img_tensor = torch.tensor(face.image).permute(2, 0, 1).float()
+        img_tensor = (img_tensor - 127.5) / 128.0
+        img_tensor = img_tensor.unsqueeze(0).to(self.device)
+        
+        with torch.no_grad():
+            embedding = self.model(img_tensor).cpu().numpy().flatten()
+            
+        return embedding.tolist()
         
     def _cosine(self, a: np.ndarray, b: np.ndarray) -> float:
         denom = np.linalg.norm(a) * np.linalg.norm(b)
