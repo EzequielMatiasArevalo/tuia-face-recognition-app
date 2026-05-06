@@ -172,6 +172,7 @@ class FaceService:
 
         return AlignedFace(
             image=aligned_image,
+            bbox=[x1, y1, x2, y2],
             keypoints=selected_face.kps.tolist(),
         )
 
