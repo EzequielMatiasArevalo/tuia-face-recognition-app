@@ -76,15 +76,36 @@ class FaceService:
             raise ValueError(f"Could not read image: {source_path}")
         # BGR uint8 (InsightFace / OpenCV convention)
         return image
-
     def detect_faces(self, image: np.ndarray) -> list[tuple[int, int, int, int]]:
-        """
-        Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
-        Return a list of tuples with the coordinates of the faces detected in the image.
-        """
-        raise NotImplementedError("Not implemented")
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
+        if not hasattr(self, "_face_detector"):
+            self._face_detector = cv2.CascadeClassifier(
+                cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+            )
 
+        faces = self._face_detector.detectMultiScale(
+            gray,
+            scaleFactor=1.1,
+            minNeighbors=5,
+            minSize=(30, 30)
+        )
+
+        boxes = []
+
+        for (x, y, w, h) in faces:
+            x1, y1 = x, y
+            x2, y2 = x + w, y + h
+
+            x1, y1, x2, y2 = self._clip_xyxy(
+                x1, y1, x2, y2,
+                image.shape[0],
+                image.shape[1]
+            )
+
+            boxes.append((x1, y1, x2, y2))
+
+        return boxes
     def align_face(
         self, image: np.ndarray, box: tuple[int, int, int, int]
     ) -> AlignedFace:
@@ -198,3 +219,4 @@ class FaceService:
             encoding="utf-8",
         )
         return str(result_file)
+    
