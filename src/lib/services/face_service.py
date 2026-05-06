@@ -1,19 +1,32 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 from pathlib import Path
 from uuid import uuid4
 
 import cv2
 import numpy as np
-import torch
 import onnxruntime
-from lib.schemas import EmbeddingRecord, FaceDetection, PredictResult, AlignedFace
+import torch
+from insightface.app import FaceAnalysis
+from insightface.utils import face_align
+
+from lib.schemas import AlignedFace, EmbeddingRecord, FaceDetection, PredictResult
 from lib.storage.base import EmbeddingStoreProtocol
-import os 
-import logging
 
 logger = logging.getLogger(__name__)
+
+
+def iou(a, b) -> float:
+    ax1, ay1, ax2, ay2 = a
+    bx1, by1, bx2, by2 = b
+    iw = max(0, min(ax2, bx2) - max(ax1, bx1))
+    ih = max(0, min(ay2, by2) - max(ay1, by1))
+    inter = iw * ih
+    union = (ax2 - ax1) * (ay2 - ay1) + (bx2 - bx1) * (by2 - by1) - inter
+    return inter / union if union > 0 else 0
 
 
 class FaceService:
@@ -30,8 +43,11 @@ class FaceService:
         self.similarity_metric = similarity_metric
         self.similarity_threshold = similarity_threshold
         self.face_size = face_size
-        self.model: any = self._load_model(model_path)
+        self.model = self._load_model(model_path)
         self.output_path = output_path
+
+        self._last_image_id = None
+        self._last_faces = []
 
         os.makedirs(self.output_path, exist_ok=True)
 
@@ -59,16 +75,25 @@ class FaceService:
         }
 
 
-    def _load_model(self, model_path: Path) -> any:
+    def _load_model(self, model_path: Path):
         mp = Path(model_path)
-        if not mp.exists():
-            raise ValueError(f"Model path does not exist: {model_path}")
         suf = mp.suffix.lower()
+
         if suf == ".pth":
+            if not mp.exists():
+                raise ValueError(f"Model path does not exist: {model_path}")
             return torch.load(mp, map_location="cpu", weights_only=False)
+
         if suf == ".onnx":
+            if not mp.exists():
+                raise ValueError(f"Model path does not exist: {model_path}")
             return onnxruntime.InferenceSession(str(mp))
-        raise ValueError(f"Unsupported model format (expected .pth or .onnx): {model_path}")
+
+        pack_name = mp.name or "buffalo_l"
+        app = FaceAnalysis(name=pack_name, providers=["CPUExecutionProvider"])
+        app.prepare(ctx_id=0, det_size=(640, 640))
+        logger.info("InsightFace pack cargado: %s", pack_name)
+        return app
 
     def _load_image(self, source_path: str) -> np.ndarray:
         image = cv2.imread(source_path)
@@ -78,28 +103,49 @@ class FaceService:
         return image
 
     def detect_faces(self, image: np.ndarray) -> list[tuple[int, int, int, int]]:
-        """
-        Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
-        Return a list of tuples with the coordinates of the faces detected in the image.
-        """
-        raise NotImplementedError("Not implemented")
+        faces = self.model.get(image)
+        # guardamos el resultado para que align_face lo reuse
+        self._last_image_id = id(image)
+        self._last_faces = faces
 
+        h, w = image.shape[:2]
+        boxes = []
+        for face in faces:
+            x1, y1, x2, y2 = [int(round(v)) for v in face.bbox]
+            x1, y1, x2, y2 = self._clip_xyxy(x1, y1, x2, y2, h, w)
+            boxes.append((x1, y1, x2, y2))
 
-    def align_face(
-        self, image: np.ndarray, box: tuple[int, int, int, int]
-    ) -> AlignedFace:
-        """
-        Crop using box (x1, y1, x2, y2) and run FaceAnalysis on the crop.
-        Return an AlignedFace object.
-        """
-        raise NotImplementedError("Not implemented")
+        logger.info("detect_faces: %d cara(s)", len(boxes))
+        return boxes
+
+    def align_face(self, image: np.ndarray, box: tuple[int, int, int, int]) -> AlignedFace:
+        # si la imagen no es la del ultimo detect_faces, volvemos a correr el modelo
+        if self._last_image_id != id(image):
+            self._last_faces = self.model.get(image)
+            self._last_image_id = id(image)
+
+        if not self._last_faces:
+            raise ValueError("No hay caras para alinear.")
+
+        best = max(self._last_faces, key=lambda f: iou(f.bbox, box))
+        aligned_img = face_align.norm_crop(image, best.kps, image_size=self.face_size)
+
+        # kps relativos al recorte (el frontend los proyecta a coords absolutas)
+        rel_kps = best.kps - np.array([box[0], box[1]], dtype=np.float32)
+
+        embedding = list(best.embedding) if best.embedding is not None else None
+
+        return AlignedFace(
+            bbox=list(box),
+            keypoints=rel_kps.tolist(),
+            image=aligned_img,
+            embedding=embedding,
+        )
 
     def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
-        """
-        Extract embedding from face.
-        Return a list of floats representing the embedding of the face.
-        """
-        raise NotImplementedError("Not implemented")
+        if face.embedding is None:
+            raise ValueError("AlignedFace sin embedding.")
+        return list(face.embedding)
         
     def _cosine(self, a: np.ndarray, b: np.ndarray) -> float:
         denom = np.linalg.norm(a) * np.linalg.norm(b)

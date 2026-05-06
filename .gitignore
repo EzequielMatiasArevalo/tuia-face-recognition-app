@@ -1,13 +1,57 @@
-.env
-.venv/
+# --- Python ---
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
 .pytest_cache/
+.coverage
+
+# --- Entornos virtuales ---
+.venv/
+.venv-*/
+venv/
+env/
+
+# --- Variables de entorno (los .example sí se commitean) ---
+.env
+src/.env
+**/.env
+
+# --- IDE / editor ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+
+# --- Sistema operativo ---
+.DS_Store
+Thumbs.db
+desktop.ini
+~$*
+
+# --- Output / datos generados en runtime ---
 output/*
 !output/.gitkeep
-model/*
-!model/.gitkeep
+data/*
+!data/.gitkeep
+
+# --- Modelos (archivos sueltos y packs descargados por InsightFace) ---
 *.pth
 *.onnx
-data/*
-.DS_Store
+*.bin
+models/*
+!models/.gitkeep
+.insightface/
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+
+# --- Logs ---
+*.log
+
+# --- Archivos del TP que no deben subirse ---
+consigna.pdf
