@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
+import PIL
 import cv2
 import numpy as np
 import torch
@@ -26,12 +27,15 @@ class FaceService:
         model_path: Path,
         output_path: Path = Path("output"),
     ) -> None:
+        from facenet_pytorch import MTCNN
+
         self.store = store
         self.similarity_metric = similarity_metric
         self.similarity_threshold = similarity_threshold
         self.face_size = face_size
         self.model: any = self._load_model(model_path)
         self.output_path = output_path
+        self.detector = MTCNN(image_size=face_size, margin=20, keep_all=True)
 
         os.makedirs(self.output_path, exist_ok=True)
 
@@ -77,13 +81,27 @@ class FaceService:
         # BGR uint8 (InsightFace / OpenCV convention)
         return image
 
-    def detect_faces(self, image: np.ndarray) -> list[tuple[int, int, int, int]]:
+    @staticmethod
+    def _to_pil(image: np.ndarray) -> PIL.Image.Image:
+        if np.issubdtype(image.dtype, np.floating):
+            return PIL.Image.fromarray((image * 255).clip(0, 255).astype(np.uint8))
+        return PIL.Image.fromarray(image.astype(np.uint8))
+
+    def detect_faces(self, image: np.ndarray) -> list[tuple[tuple[int,int,int,int], np.ndarray]]:
         """
         Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
-        Return a list of tuples with the coordinates of the faces detected in the image.
+        Return a list of tuples with the coordinates of the faces detected in the image
+        and the landmarks found.
         """
-        raise NotImplementedError("Not implemented")
 
+        pil_img = self._to_pil(image)
+        boxes, _, landmarks = self.detector.detect(pil_img, landmarks=True)
+        if boxes is None:
+            return []
+        return [
+            (tuple(map(int, b)), kps.astype(np.float32))
+            for b, kps in zip(boxes, landmarks)
+        ]
 
     def align_face(
         self, image: np.ndarray, box: tuple[int, int, int, int]
@@ -144,10 +162,11 @@ class FaceService:
         if len(faces) != 1:
             raise ValueError("Exactly one face must be detected for identity registration.")
         
-        logger.info(f"Face detected: {faces[0]}")
+        box, kps = faces[0]
+        
+        logger.info(f"Face detected at: {box}")
 
-        box = faces[0]
-        aligned = self.align_face(image, box)
+        aligned = self.align_face(image, box, kps)
         embedding = self.extract_embedding_from_face(aligned)
 
         img_id = str(uuid4())
@@ -169,17 +188,17 @@ class FaceService:
     def predict(self, source_path: str, output_path: Path) -> str:
         image = self._load_image(source_path)
         faces = self.detect_faces(image)
+
         detections: list[FaceDetection] = []
-        for (x1, y1, x2, y2) in faces:
-            aligned = self.align_face(image, (x1, y1, x2, y2))
+        for box, kps in faces:
+            x1, y1, x2, y2 = box
+            aligned = self.align_face(image, box, kps)
             embedding = self.extract_embedding_from_face(aligned)
             label, score = self.identify(embedding)
-            kps = getattr(aligned, "keypoints", None)
-            kps_arr = np.asarray(kps) if kps is not None else None
             detections.append(
                 FaceDetection(
                     bbox=[x1, y1, x2, y2],
-                    keypoints=self._kps_to_keypoints_dict(kps_arr),
+                    keypoints=self._kps_to_keypoints_dict(kps),
                     label=label,
                     score=round(float(score), 4),
                 )
