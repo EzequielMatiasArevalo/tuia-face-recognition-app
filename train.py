@@ -127,7 +127,7 @@ def generate_and_store_embeddings(lfw_data, mtcnn, store: PgVectorEmbeddingStore
         record = EmbeddingRecord(
             id_imagen=str(uuid.uuid4()),
             embedding=embedding.tolist(),
-            path=f"lfw_virtual_path_{idx}.jpg", # Como viene de sklearn no tenemos el path real
+            path=f"{person_name}_{idx}.jpg", # Como viene de sklearn no tenemos el path real
             etiqueta=person_name,
             metadata={"source": "LFW Sklearn"}
         )
