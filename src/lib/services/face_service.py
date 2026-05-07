@@ -43,6 +43,8 @@ class FaceService:
             post_process=False)
         
         self.model = self._load_model(model_path)
+        self.model.to(self.device)
+        self.model.eval()
         self.output_path = output_path
 
         os.makedirs(self.output_path, exist_ok=True)
@@ -137,23 +139,23 @@ class FaceService:
         Extract embedding from face.
         Return a list of floats representing the embedding of the face.
         """
+        face_rgb = cv2.cvtColor(face.image, cv2.COLOR_BGR2RGB)
+        
+        face_tensor = torch.tensor(face_rgb).permute(2, 0, 1).float()
+        
+        face_tensor = (face_tensor - 127.5) / 128.0
+        face_tensor = face_tensor.unsqueeze(0).to(self.device)
 
-        img_rgb = cv2.cvtColor(face.image, cv2.COLOR_BGR2RGB)
-        img_tensor = torch.tensor(img_rgb).permute(2, 0, 1).float().to(self.device)
-        
-        img_tensor = (img_tensor - 127.5) / 128.0
-        img_tensor = img_tensor.unsqueeze(0) # Batch size de 1
-        
         with torch.no_grad():
-            if isinstance(self.model, onnxruntime.InferenceSession):
-                input_name = self.model.get_inputs()[0].name
-                embedding = self.model.run(None, {input_name: img_tensor.cpu().numpy()})[0]
-            else:
-                # Asumiendo que el .pth es un modelo de PyTorch (nn.Module)
-                self.model.eval()
-                embedding = self.model(img_tensor).cpu().numpy()
+            embedding = self.model(face_tensor)
+            
+        embedding_np = embedding.cpu().numpy().flatten()
+        
+        norm = np.linalg.norm(embedding_np)
+        if norm > 0:
+            embedding_np = embedding_np / norm
 
-        return embedding.flatten().tolist()
+        return embedding_np.tolist()
 
         
     def _cosine(self, a: np.ndarray, b: np.ndarray) -> float:
