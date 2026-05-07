@@ -123,6 +123,9 @@ class FaceService:
         x1, y1, x2, y2 = box
         
         face_crop = image[y1:y2, x1:x2]
+
+        if face_crop.size == 0: # Caso de error en coordenadas
+            return None
         
         face_aligned = cv2.resize(face_crop, (self.face_size, self.face_size), interpolation=cv2.INTER_AREA)
         
@@ -130,7 +133,7 @@ class FaceService:
             image=face_aligned,
             bbox=list(box),
             embedding=[], 
-            keypoints=None # Opcional: podrías extraerlos con self.detector.detect(image)
+            keypoints=self._kps_to_keypoints_dict # Opcional: podrías extraerlos con self.detector.detect(image)
             )
    
 
