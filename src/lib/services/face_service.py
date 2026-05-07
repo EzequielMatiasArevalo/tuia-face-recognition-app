@@ -12,6 +12,7 @@ from lib.schemas import EmbeddingRecord, FaceDetection, PredictResult, AlignedFa
 from lib.storage.base import EmbeddingStoreProtocol
 import os 
 import logging
+from facenet_pytorch import MTCNN
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +30,19 @@ class FaceService:
         self.store = store
         self.similarity_metric = similarity_metric
         self.similarity_threshold = similarity_threshold
-        self.face_size = face_size
-        self.model: any = self._load_model(model_path)
+        self.face_size = face_size #CONVIENE 160 X 160 EN TEORIA
+        #self.model: any = self._load_model(model_path)
+        self.output_path = output_path
+
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.detector = MTCNN(
+            image_size=face_size, 
+            margin=20, 
+            keep_all=True, 
+            device=self.device,
+            post_process=False)
+        
+        self.model = self._load_model(model_path)
         self.output_path = output_path
 
         os.makedirs(self.output_path, exist_ok=True)
@@ -82,48 +94,67 @@ class FaceService:
         Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
         Return a list of tuples with the coordinates of the faces detected in the image.
         """
-        raise NotImplementedError("Not implemented")
+
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        boxes, _ = self.detector.detect(image_rgb)
+        
+        if boxes is None:
+            return []
+        
+        formatted_boxes = []
+        h, w, _ = image.shape
+        for box in boxes:
+        
+            x1, y1, x2, y2 = self._clip_xyxy(
+                int(box[0]), int(box[1]), int(box[2]), int(box[3]), h, w
+            )
+            formatted_boxes.append((x1, y1, x2, y2))
+            
+        return formatted_boxes
 
 
-    def align_face(
-        self, image: np.ndarray, box: tuple[int, int, int, int]
-    ) -> AlignedFace:
+    def align_face(self, image: np.ndarray, box: tuple[int, int, int, int]) -> AlignedFace:
         """
         Crop using box (x1, y1, x2, y2) and run FaceAnalysis on the crop.
         Return an AlignedFace object.
         """
-    
-        app = FaceAnalysis(providers=['CPUExecutionProvider'])
-        app.prepare(ctx_id=0, det_size=(640, 640)) 
-        cv2_img = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
-        faces = app.get(cv2_img)
+        x1, y1, x2, y2 = box
         
-        aligned_results = []
+        face_crop = image[y1:y2, x1:x2]
         
-        for face in faces:
-            face_rgb = cv2.cvtColor(face.norm_face, cv2.COLOR_BGR2RGB)
-            aligned_image_pil = Image.fromarray(face_rgb)
-            
-
-            aligned_face = AlignedFace(
-                bbox=face.bbox,
-                keypoints=face.kps,
-                image=aligned_image_pil, 
-                embedding=face.embedding.tolist()
+        face_aligned = cv2.resize(face_crop, (self.face_size, self.face_size), interpolation=cv2.INTER_AREA)
+        
+        return AlignedFace(
+            image=face_aligned,
+            bbox=list(box),
+            embedding=[], 
+            keypoints=None # Opcional: podrías extraerlos con self.detector.detect(image)
             )
-            
-            aligned_results.append(aligned_face)
-            
-        return aligned_results
-
-        raise NotImplementedError("Not implemented")
+   
 
     def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
         """
         Extract embedding from face.
         Return a list of floats representing the embedding of the face.
         """
-        raise NotImplementedError("Not implemented")
+
+        img_rgb = cv2.cvtColor(face.image, cv2.COLOR_BGR2RGB)
+        img_tensor = torch.tensor(img_rgb).permute(2, 0, 1).float().to(self.device)
+        
+        img_tensor = (img_tensor - 127.5) / 128.0
+        img_tensor = img_tensor.unsqueeze(0) # Batch size de 1
+        
+        with torch.no_grad():
+            if isinstance(self.model, onnxruntime.InferenceSession):
+                input_name = self.model.get_inputs()[0].name
+                embedding = self.model.run(None, {input_name: img_tensor.cpu().numpy()})[0]
+            else:
+                # Asumiendo que el .pth es un modelo de PyTorch (nn.Module)
+                self.model.eval()
+                embedding = self.model(img_tensor).cpu().numpy()
+
+        return embedding.flatten().tolist()
+
         
     def _cosine(self, a: np.ndarray, b: np.ndarray) -> float:
         denom = np.linalg.norm(a) * np.linalg.norm(b)
