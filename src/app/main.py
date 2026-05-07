@@ -27,13 +27,23 @@ app.add_middleware(
 app.include_router(face_router)
 
 @app.get("/health", tags=["health"])
-async def health() -> dict[str, str]:
+async def health() -> dict:
+    status = "ok"
+    details = []
+    
     if not settings.model_name:
-        logger.error("Model name is not set as environment variable")
-        raise HTTPException(status_code=500, detail="Model name is not set as environment variable")
-    if settings.model_name and not os.path.exists(f"{settings.model_path}/{settings.model_name}"):
-        logger.error(f"Model path {settings.model_path}/{settings.model_name} does not exist")
-        raise HTTPException(status_code=500, detail=f"Model path {settings.model_path}/{settings.model_name} does not exist")
+        status = "degraded"
+        details.append("Model name is not set as environment variable")
+        logger.warning("Model name is not set as environment variable")
+    
+    model_full_path = f"{settings.model_path}/{settings.model_name}" if settings.model_name else None
+    if model_full_path and not os.path.exists(model_full_path):
+        status = "degraded"
+        details.append(f"Model file {settings.model_name} missing at {settings.model_path}")
+        logger.warning(f"Model path {model_full_path} does not exist")
         
-    logger.info(f"Model name is set to {settings.model_name} located at {settings.model_path}/{settings.model_name}")
-    return {"status": "ok", "model": settings.model_name}
+    return {
+        "status": status, 
+        "model": settings.model_name,
+        "details": details
+    }

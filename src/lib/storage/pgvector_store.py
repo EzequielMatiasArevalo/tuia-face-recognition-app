@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 
 from pgvector.psycopg import register_vector
 from psycopg import connect
@@ -22,18 +23,30 @@ class PgVectorEmbeddingStore:
         embedding_dim: int = 512,
     ) -> None:
         self.embedding_dim = embedding_dim
-        self.conn = connect(
+        self.conn = self._connect_with_retry(
             host=host,
             port=port,
             dbname=dbname,
             user=user,
             password=password,
-            autocommit=True,
         )
         with self.conn.cursor() as cur:
             cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
         register_vector(self.conn)
         self._ensure_schema()
+
+    def _connect_with_retry(self, **kwargs):
+        max_retries = 10
+        retry_delay = 2
+        for i in range(max_retries):
+            try:
+                return connect(autocommit=True, **kwargs)
+            except Exception as e:
+                if i == max_retries - 1:
+                    logger.error(f"Could not connect to Postgres after {max_retries} attempts: {e}")
+                    raise
+                logger.warning(f"Postgres connection failed (attempt {i+1}/{max_retries}), retrying in {retry_delay}s... Error: {e}")
+                time.sleep(retry_delay)
 
     def _ensure_schema(self) -> None:
         expected_type = f"vector({self.embedding_dim})"
@@ -117,10 +130,22 @@ class PgVectorEmbeddingStore:
                 """
                 SELECT id_imagen, embedding, path, etiqueta, metadata
                 FROM embeddings
-                ORDER BY embedding <=> %s
+                ORDER BY embedding <=> %s::vector
                 LIMIT %s
                 """,
                 (query, k),
             )
             rows = cur.fetchall()
-        return [EmbeddingRecord.model_validate(row) for row in rows]
+
+        records: list[EmbeddingRecord] = []
+        for row in rows:
+            records.append(
+                EmbeddingRecord(
+                    id_imagen=row[0],
+                    embedding=list(row[1]),
+                    path=row[2],
+                    etiqueta=row[3],
+                    metadata=row[4] if isinstance(row[4], dict) else json.loads(row[4]),
+                )
+            )
+        return records
