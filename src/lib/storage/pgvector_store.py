@@ -149,3 +149,9 @@ class PgVectorEmbeddingStore:
                 )
             )
         return records
+    
+    def truncate(self) -> None:
+        """Borra todos los registros de la tabla y reinicia los contadores."""
+        with self.conn.cursor() as cur:
+            logger.info("Truncating 'embeddings' table...")
+            cur.execute("TRUNCATE TABLE embeddings RESTART IDENTITY CASCADE")
