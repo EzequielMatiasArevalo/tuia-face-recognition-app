@@ -6,10 +6,17 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 COPY requirements.txt /app/requirements.txt
+# Los modelos InsightFace se descargan a /root/.insightface (no sobreescrito por volumenes).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    && pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r /app/requirements.txt \
+    libgl1 \
+    libglib2.0-0 \
+    && pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r /app/requirements.txt \
+    && python -c "\
+from insightface.app import FaceAnalysis; \
+app = FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider']); \
+app.prepare(ctx_id=-1)" \
     && apt-get purge -y build-essential \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*

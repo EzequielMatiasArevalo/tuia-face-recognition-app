@@ -8,9 +8,12 @@ import cv2
 import numpy as np
 import torch
 import onnxruntime
+import insightface
+from insightface.app import FaceAnalysis
+from insightface.utils import face_align as insightface_align
 from lib.schemas import EmbeddingRecord, FaceDetection, PredictResult, AlignedFace
 from lib.storage.base import EmbeddingStoreProtocol
-import os 
+import os
 import logging
 
 logger = logging.getLogger(__name__)
@@ -30,8 +33,23 @@ class FaceService:
         self.similarity_metric = similarity_metric
         self.similarity_threshold = similarity_threshold
         self.face_size = face_size
-        self.model: any = self._load_model(model_path)
         self.output_path = output_path
+
+        # Intentar cargar el modelo ONNX/PTH si existe; si no, InsightFace maneja los embeddings.
+        try:
+            self.model = self._load_model(model_path)
+        except (ValueError, Exception) as exc:
+            logger.warning("No se pudo cargar el modelo en %s: %s. Se usará InsightFace directamente.", model_path, exc)
+            self.model = None
+
+        # Inicializamos InsightFace FaceAnalysis (RetinaFace + ArcFace buffalo_l).
+        self._analyzer = FaceAnalysis(name="buffalo_l", providers=["CPUExecutionProvider"])
+        self._analyzer.prepare(ctx_id=-1, det_size=(320, 320))
+        logger.info("InsightFace FaceAnalysis inicializado correctamente.")
+
+        # Cache liviano: evita re-analizar la misma imagen.
+        self._cache_ref: object = None
+        self._cache_faces: list = []
 
         os.makedirs(self.output_path, exist_ok=True)
 
@@ -77,29 +95,102 @@ class FaceService:
         # BGR uint8 (InsightFace / OpenCV convention)
         return image
 
+    def _get_faces_cached(self, image: np.ndarray) -> list:
+        """Analiza la imagen con InsightFace; usa cache si es el mismo objeto imagen.
+        Usa 'is' en vez de id() para evitar colisiones cuando Python reutiliza direcciones."""
+        if self._cache_ref is not image:
+            self._cache_faces = self._analyzer.get(image)
+            self._cache_ref = image  # referencia viva → el id() no se reutiliza
+        return self._cache_faces
+
     def detect_faces(self, image: np.ndarray) -> list[tuple[int, int, int, int]]:
         """
-        Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
-        Return a list of tuples with the coordinates of the faces detected in the image.
+        Detecta rostros usando RetinaFace (InsightFace buffalo_l).
+        Filtra caras muy pequeñas (artefactos de fondo) y retorna (x1, y1, x2, y2).
         """
-        raise NotImplementedError("Not implemented")
-
+        faces = self._get_faces_cached(image)
+        h, w = image.shape[:2]
+        # Ignorar caras cuya área sea menor al 0.5% del frame (ruido de fondo).
+        min_area = w * h * 0.005
+        boxes = []
+        for face in faces:
+            x1, y1, x2, y2 = (int(c) for c in face.bbox[:4])
+            x1, y1, x2, y2 = self._clip_xyxy(x1, y1, x2, y2, h, w)
+            if (x2 - x1) * (y2 - y1) < min_area:
+                logger.debug("Cara ignorada por tamaño pequeño: bbox=(%d,%d,%d,%d)", x1, y1, x2, y2)
+                continue
+            boxes.append((x1, y1, x2, y2))
+        return boxes
 
     def align_face(
         self, image: np.ndarray, box: tuple[int, int, int, int]
     ) -> AlignedFace:
         """
-        Crop using box (x1, y1, x2, y2) and run FaceAnalysis on the crop.
-        Return an AlignedFace object.
+        Alinea la cara usando los 5 keypoints faciales de InsightFace (norm_crop).
+        Busca la cara cacheada más cercana al bounding box dado.
         """
-        raise NotImplementedError("Not implemented")
+        faces = self._get_faces_cached(image)
+        x1, y1, x2, y2 = box
+        h, w = image.shape[:2]
+
+        best_face = None
+        best_dist = float("inf")
+        for face in faces:
+            # Aplicar el mismo clipping que detect_faces para comparar correctamente.
+            fx1, fy1, fx2, fy2 = (int(c) for c in face.bbox[:4])
+            fx1, fy1, fx2, fy2 = self._clip_xyxy(fx1, fy1, fx2, fy2, h, w)
+            dist = abs(fx1 - x1) + abs(fy1 - y1)
+            if dist < best_dist:
+                best_dist = dist
+                best_face = face
+
+        if best_face is not None and best_dist < 30:
+            kps = best_face.kps
+            aligned_img = insightface_align.norm_crop(image, kps, image_size=self.face_size)
+            emb: list[float] | None = None
+            if best_face.normed_embedding is not None:
+                emb = best_face.normed_embedding.tolist()
+            return AlignedFace(
+                bbox=best_face.bbox.tolist(),
+                keypoints=kps,
+                image=aligned_img,
+                embedding=emb,
+            )
+
+        # Fallback: recorte simple (sin embedding de InsightFace disponible).
+        logger.warning("align_face: no se encontró match para bbox %s (dist=%.1f).", box, best_dist)
+        crop = image[y1:y2, x1:x2]
+        if crop.size == 0:
+            crop = image
+        crop = cv2.resize(crop, (self.face_size, self.face_size))
+        return AlignedFace(bbox=list(box), keypoints=None, image=crop, embedding=None)
 
     def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
         """
-        Extract embedding from face.
-        Return a list of floats representing the embedding of the face.
+        Extrae el embedding facial.
+        Prioridad:
+          1. Embedding pre-calculado por InsightFace (almacenado en face.embedding).
+          2. Modelo ONNX propio (self.model) si está cargado.
         """
-        raise NotImplementedError("Not implemented")
+        # 1. Usar embedding de InsightFace si ya fue calculado en align_face.
+        if face.embedding is not None:
+            return face.embedding
+
+        # 2. Usar modelo ONNX (ArcFace) cargado desde MODEL_PATH.
+        if self.model is not None:
+            img = cv2.resize(face.image, (112, 112)).astype(np.float32)
+            img = img[:, :, ::-1]           # BGR → RGB
+            img = (img - 127.5) / 128.0    # normalización estándar ArcFace
+            img = img.transpose(2, 0, 1)[np.newaxis]
+            input_name = self.model.get_inputs()[0].name
+            out = self.model.run(None, {input_name: img})[0]
+            arr = np.array(out[0], dtype=np.float32)
+            norm = np.linalg.norm(arr)
+            if norm > 0:
+                arr = arr / norm
+            return arr.tolist()
+
+        raise ValueError("No hay modelo ni embedding disponible para extract_embedding_from_face.")
         
     def _cosine(self, a: np.ndarray, b: np.ndarray) -> float:
         denom = np.linalg.norm(a) * np.linalg.norm(b)
@@ -175,7 +266,14 @@ class FaceService:
             embedding = self.extract_embedding_from_face(aligned)
             label, score = self.identify(embedding)
             kps = getattr(aligned, "keypoints", None)
-            kps_arr = np.asarray(kps) if kps is not None else None
+            kps_arr = None
+            if kps is not None:
+                # El frontend espera keypoints en coordenadas relativas al recorte (bbox).
+                # face.kps de InsightFace son coordenadas absolutas: Restamos el offset del bbox.
+                kps_full = np.asarray(kps, dtype=float)
+                kps_arr = kps_full.copy()
+                kps_arr[:, 0] -= x1
+                kps_arr[:, 1] -= y1
             detections.append(
                 FaceDetection(
                     bbox=[x1, y1, x2, y2],
