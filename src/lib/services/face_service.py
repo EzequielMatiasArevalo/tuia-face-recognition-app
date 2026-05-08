@@ -177,12 +177,15 @@ class FaceService:
 
         self._embedding_cache[(x1, y1, x2, y2)] = selected_face.embedding.astype(np.float32)
 
+        kps_relative = selected_face.kps.copy()
+        kps_relative[:, 0] -= x1
+        kps_relative[:, 1] -= y1
+
         return AlignedFace(
             image=aligned_image,
             bbox=[x1, y1, x2, y2],
-            keypoints=selected_face.kps.tolist(),
-        )
-
+            keypoints=kps_relative.tolist(),
+)
 
     def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
         bbox = tuple(face.bbox)
