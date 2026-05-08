@@ -1,5 +1,7 @@
 .env
 .venv/
+venv/
+requirements_no_insight.txt
 __pycache__/
 *.pyc
 .pytest_cache/

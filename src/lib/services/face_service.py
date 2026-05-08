@@ -82,7 +82,12 @@ class FaceService:
         Detecta caras con MTCNN (facenet_pytorch). Devuelve boxes (x1,y1,x2,y2)
         y cachea los 5 keypoints por cara para que align_face pueda usarlos.
         """
-
+        if not hasattr(self, '_fa'):
+            from insightface.app import FaceAnalysis
+            self._fa = FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider'])
+            self._fa.prepare(ctx_id=0, det_size=(320, 320))
+        self._last_faces = self._fa.get(image)
+        return [(int(f.bbox[0]), int(f.bbox[1]), int(f.bbox[2]), int(f.bbox[3])) for f in self._last_faces]
 
     def align_face(
         self, image: np.ndarray, box: tuple[int, int, int, int]
@@ -91,12 +96,28 @@ class FaceService:
         Alineacion geometrica: rota la imagen para que los ojos queden horizontales
         usando los keypoints cacheados por detect_faces. Luego recorta y redimensiona.
         """
+        from insightface.utils import face_align
+        face = next((f for f in getattr(self, '_last_faces', []) if abs(int(f.bbox[0]) - box[0]) < 3), None)
+        kps = face.kps if face is not None else None
+        if kps is not None:
+            aligned = face_align.norm_crop(image, landmark=kps, image_size=self.face_size)
+            kps_crop = kps.copy()
+            kps_crop[:, 0] -= box[0]
+            kps_crop[:, 1] -= box[1]
+        else:
+            x1, y1, x2, y2 = self._clip_xyxy(*box, image.shape[0], image.shape[1])
+            aligned = cv2.resize(image[y1:y2, x1:x2], (self.face_size, self.face_size))
+            kps_crop = None
+        return AlignedFace(bbox=list(box), keypoints=kps_crop, image=aligned)
 
     def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
         """
         Extract embedding from face.
         Return a list of floats representing the embedding of the face.
         """
+        rec = self._fa.models.get('recognition')
+        emb = rec.get_feat([face.image])[0].astype(np.float32)
+        return (emb / (np.linalg.norm(emb) + 1e-8)).tolist()
         
     def _cosine(self, a: np.ndarray, b: np.ndarray) -> float:
         denom = np.linalg.norm(a) * np.linalg.norm(b)
