@@ -185,7 +185,7 @@ class FaceService:
             image=aligned_image,
             bbox=[x1, y1, x2, y2],
             keypoints=kps_relative.tolist(),
-)
+        )
 
     def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
         bbox = tuple(face.bbox)
