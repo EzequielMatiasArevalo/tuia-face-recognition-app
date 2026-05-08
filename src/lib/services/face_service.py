@@ -30,7 +30,10 @@ class FaceService:
         self.similarity_metric = similarity_metric
         self.similarity_threshold = similarity_threshold
         self.face_size = face_size
-        self.model: any = self._load_model(model_path)
+        #self.model: any = self._load_model(model_path)
+        self.model = None # Esta linea se agregó solamente para poder 
+                            # levantar el Backend mientras el archivo face_detection.pth se 
+                            # se encuentra vacío
         self.output_path = output_path
 
         os.makedirs(self.output_path, exist_ok=True)
