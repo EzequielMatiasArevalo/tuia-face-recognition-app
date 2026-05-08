@@ -55,4 +55,3 @@ services:
 
 volumes:
   pgdata:
-  insightface_models:
