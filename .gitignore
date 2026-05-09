@@ -1,5 +1,5 @@
 .env
-.venv/
+venv/
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -9,5 +9,4 @@ model/*
 !model/.gitkeep
 *.pth
 *.onnx
-data/*
 .DS_Store
