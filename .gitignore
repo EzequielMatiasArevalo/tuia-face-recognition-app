@@ -55,3 +55,9 @@ models/*
 
 # --- Archivos del TP que no deben subirse ---
 consigna.pdf
+
+# --- Dataset propio (las fotos no se commitean, solo la estructura) ---
+dataset/**/*
+!dataset/
+!dataset/**/
+!dataset/**/.gitkeep
