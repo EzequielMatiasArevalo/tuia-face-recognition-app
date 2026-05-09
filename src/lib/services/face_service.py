@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
+import PIL
 import cv2
 import numpy as np
 import torch
@@ -26,14 +27,60 @@ class FaceService:
         model_path: Path,
         output_path: Path = Path("output"),
     ) -> None:
+        from facenet_pytorch import MTCNN
+        import torchvision.transforms as T
+        
         self.store = store
         self.similarity_metric = similarity_metric
         self.similarity_threshold = similarity_threshold
         self.face_size = face_size
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model: any = self._load_model(model_path)
         self.output_path = output_path
+        self.detector = MTCNN(image_size=face_size, margin=0, keep_all=True, post_process=False, device=self.device)
+        
+        self._embed_tf = T.Compose([
+            T.Resize(256, interpolation=T.InterpolationMode.BICUBIC),
+            T.CenterCrop(224),
+            T.ToTensor(),
+            T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+        ])
 
         os.makedirs(self.output_path, exist_ok=True)
+
+    def _load_model(self, model_path: Path):
+        import timm
+        mp = Path(model_path)
+        if not mp.exists():
+            raise ValueError(f"Model path does not exist: {model_path}")
+        suf = mp.suffix.lower()
+        if suf == ".pth":
+            # Reconstruir arquitectura y cargar state_dict; head=Identity para extraer features 768-D
+            payload = torch.load(mp, map_location=self.device, weights_only=False)
+            # tests/conftest.py: checkpoint mínimo para CI (sin ViT real)
+            if isinstance(payload, dict) and payload.get("_pytest_dummy"):
+                return payload
+            state_dict = payload
+            # num_classes se infiere del state_dict: head.weight tiene shape (N, 768)
+            num_classes = state_dict["head.weight"].shape[0] if "head.weight" in state_dict else 0
+            model = timm.create_model("vit_base_patch16_224", pretrained=False, num_classes=num_classes)
+            model.load_state_dict(state_dict)
+            model.head = torch.nn.Identity()
+            return model.to(self.device).eval()
+        if suf == ".onnx":
+            return onnxruntime.InferenceSession(str(mp))
+        raise ValueError(f"Unsupported model format (expected .pth or .onnx): {model_path}")
+
+    # def _load_model(self, model_path: Path) -> any:
+    #     mp = Path(model_path)
+    #     if not mp.exists():
+    #         raise ValueError(f"Model path does not exist: {model_path}")
+    #     suf = mp.suffix.lower()
+    #     if suf == ".pth":
+    #         return torch.load(mp, map_location="cpu", weights_only=False)
+    #     if suf == ".onnx":
+    #         return onnxruntime.InferenceSession(str(mp))
+    #     raise ValueError(f"Unsupported model format (expected .pth or .onnx): {model_path}")
 
     @staticmethod
     def _clip_xyxy(
@@ -58,48 +105,64 @@ class FaceService:
             for i in range(len(kps))
         }
 
-
-    def _load_model(self, model_path: Path) -> any:
-        mp = Path(model_path)
-        if not mp.exists():
-            raise ValueError(f"Model path does not exist: {model_path}")
-        suf = mp.suffix.lower()
-        if suf == ".pth":
-            return torch.load(mp, map_location="cpu", weights_only=False)
-        if suf == ".onnx":
-            return onnxruntime.InferenceSession(str(mp))
-        raise ValueError(f"Unsupported model format (expected .pth or .onnx): {model_path}")
-
     def _load_image(self, source_path: str) -> np.ndarray:
         image = cv2.imread(source_path)
         if image is None:
             raise ValueError(f"Could not read image: {source_path}")
         # BGR uint8 (InsightFace / OpenCV convention)
-        return image
+        return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-    def detect_faces(self, image: np.ndarray) -> list[tuple[int, int, int, int]]:
+    @staticmethod
+    def _to_pil(image: np.ndarray) -> PIL.Image.Image:
+        if np.issubdtype(image.dtype, np.floating):
+            return PIL.Image.fromarray((image * 255).clip(0, 255).astype(np.uint8))
+        return PIL.Image.fromarray(image.astype(np.uint8))
+
+    def detect_faces(self, image: np.ndarray) -> list[tuple[tuple[int,int,int,int], np.ndarray]]:
         """
         Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
-        Return a list of tuples with the coordinates of the faces detected in the image.
+        Return a list of tuples with the coordinates of the faces detected in the image
+        and the landmarks found.
         """
-        raise NotImplementedError("Not implemented")
 
+        pil_img = self._to_pil(image)
+        boxes, _, landmarks = self.detector.detect(pil_img, landmarks=True)
+        if boxes is None:
+            return []
+        return [
+            (tuple(map(int, b)), kps.astype(np.float32))
+            for b, kps in zip(boxes, landmarks)
+        ]
 
     def align_face(
-        self, image: np.ndarray, box: tuple[int, int, int, int]
+        self, image: np.ndarray, box: tuple[int, int, int, int],keypoints: np.ndarray,
     ) -> AlignedFace:
         """
         Crop using box (x1, y1, x2, y2) and run FaceAnalysis on the crop.
         Return an AlignedFace object.
         """
-        raise NotImplementedError("Not implemented")
+        pil = self._to_pil(image)
+        box_np = np.asarray([box], dtype=np.float32)  # MTCNN.extract espera array (N, 4)
+        crop = self.detector.extract(pil, box_np, save_path=None)
+        if crop is None:
+            raise ValueError("MTCNN no pudo extraer el crop para esa bbox.")
+        if crop.ndim == 4:
+            crop = crop[0]
+        aligned = crop.permute(1, 2, 0).cpu().numpy().astype(np.uint8)  # RGB
+        return AlignedFace(bbox=list(box), keypoints=keypoints, image=aligned)        
 
     def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
         """
         Extract embedding from face.
         Return a list of floats representing the embedding of the face.
         """
-        raise NotImplementedError("Not implemented")
+        import torch.nn.functional as F
+        pil = PIL.Image.fromarray(face.image.astype(np.uint8))
+        x = self._embed_tf(pil).unsqueeze(0).to(self.device)
+        with torch.inference_mode():
+            v = self.model(x)                       # (1, 768)
+            v = F.normalize(v, dim=-1)              # L2-normalize para cosine similarity
+        return v.squeeze(0).cpu().numpy().astype(np.float32).tolist()
         
     def _cosine(self, a: np.ndarray, b: np.ndarray) -> float:
         denom = np.linalg.norm(a) * np.linalg.norm(b)
@@ -144,10 +207,11 @@ class FaceService:
         if len(faces) != 1:
             raise ValueError("Exactly one face must be detected for identity registration.")
         
-        logger.info(f"Face detected: {faces[0]}")
+        box, kps = faces[0]
+        
+        logger.info(f"Face detected at: {box}")
 
-        box = faces[0]
-        aligned = self.align_face(image, box)
+        aligned = self.align_face(image, box, kps)
         embedding = self.extract_embedding_from_face(aligned)
 
         img_id = str(uuid4())
@@ -162,24 +226,24 @@ class FaceService:
         )
         self.store.append(record)
 
-        cv2.imwrite(str(img_output_path), aligned.image)
+        cv2.imwrite(str(img_output_path), cv2.cvtColor(aligned.image, cv2.COLOR_RGB2BGR))
         logger.info(f"Identity registered: {identity} with image: {image_path}")
         return record
 
     def predict(self, source_path: str, output_path: Path) -> str:
         image = self._load_image(source_path)
         faces = self.detect_faces(image)
+
         detections: list[FaceDetection] = []
-        for (x1, y1, x2, y2) in faces:
-            aligned = self.align_face(image, (x1, y1, x2, y2))
+        for box, kps in faces:
+            x1, y1, x2, y2 = box
+            aligned = self.align_face(image, box, kps)
             embedding = self.extract_embedding_from_face(aligned)
             label, score = self.identify(embedding)
-            kps = getattr(aligned, "keypoints", None)
-            kps_arr = np.asarray(kps) if kps is not None else None
             detections.append(
                 FaceDetection(
                     bbox=[x1, y1, x2, y2],
-                    keypoints=self._kps_to_keypoints_dict(kps_arr),
+                    keypoints=self._kps_to_keypoints_dict(kps),
                     label=label,
                     score=round(float(score), 4),
                 )

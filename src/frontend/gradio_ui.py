@@ -135,7 +135,7 @@ def start_predict(image: np.ndarray | None) -> tuple[str, str]:
         path = upload_numpy_image(image)
         with _client() as c:
             r = c.post(
-                f"{API_BASE}/predict",
+                f"{API_BASE}/inference",
                 json={"source_path": path, "source_type": "image"},
             )
             r.raise_for_status()
@@ -160,7 +160,7 @@ def start_register(identity: str, image: np.ndarray | None) -> tuple[str, str]:
         path = upload_numpy_image(image)
         with _client() as c:
             r = c.post(
-                f"{API_BASE}/insert",
+                f"{API_BASE}/register",
                 json={"identity": name, "image_path": path, "metadata": {"source": "frontend"}},
             )
             r.raise_for_status()
@@ -278,14 +278,14 @@ def build_ui() -> gr.Blocks:
         job_id_shared = gr.Textbox(label="Job ID (último o manual)", lines=1)
 
         with gr.Tab("Predecir"):
-            gr.Markdown("Llama a `POST /upload` y `POST /predict`.")
+            gr.Markdown("Llama a `POST /upload` y `POST /inference`.")
             pred_in = gr.Image(label="Imagen", type="numpy", height=320)
             pred_btn = gr.Button("Iniciar predicción", variant="primary")
             pred_log = gr.Markdown()
             pred_quick = gr.Button("Consultar resultado de este job")
 
         with gr.Tab("Registrar identidad"):
-            gr.Markdown("`POST /upload` y `POST /insert` (un rostro por imagen).")
+            gr.Markdown("`POST /upload` y `POST /register` (un rostro por imagen).")
             reg_name = gr.Textbox(label="Nombre / etiqueta", placeholder="ej. Ana")
             reg_in = gr.Image(label="Imagen", type="numpy", height=320)
             reg_btn = gr.Button("Registrar", variant="primary")

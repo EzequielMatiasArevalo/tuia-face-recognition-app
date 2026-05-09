@@ -6,7 +6,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from dotenv import load_dotenv
 import logging
-import os
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
@@ -18,24 +17,25 @@ class Settings(BaseSettings):
     cors_origins: str = Field(
         default="*",
         description="Comma-separated allowed origins, or * for any.",
+        validation_alias="CORS_ORIGINS",
     )
-    app_name: str = "Facial Recognition TP1"
-    model_name: str | None = os.getenv("MODEL_NAME")
-    similarity_metric: str = os.getenv("SIMILARITY_METRIC", "cosine")
-    similarity_threshold: float = os.getenv("SIMILARITY_THRESHOLD", 0.55)
-    embeddings_path: Path = Path(os.getenv("EMBEDDINGS_PATH", "data/embeddings.json"))
-    data_path: Path = Path(os.getenv("DATA_PATH", "data"))
-    output_path: Path = Path(os.getenv("OUTPUT_PATH", "output"))
-    model_path: Path = Path(os.getenv("MODEL_PATH", "lib/models"))
-    max_workers: int = os.getenv("MAX_WORKERS", 2)
-    face_size: int = os.getenv("FACE_SIZE", 112)
-    embedding_dim: int = os.getenv("EMBEDDING_DIM", 512)
-    use_pgvector: bool = os.getenv("USE_PGVECTOR", "True").lower() == "true"
-    postgres_host: str = os.getenv("POSTGRES_HOST", "localhost")
-    postgres_port: int = os.getenv("POSTGRES_PORT", 5432)
-    postgres_db: str = os.getenv("POSTGRES_DB", "vector_db")
-    postgres_user: str = os.getenv("POSTGRES_USER", "user")
-    postgres_password: str = os.getenv("POSTGRES_PASSWORD", "password")
+    app_name: str = Field(default="Facial Recognition TP1", validation_alias="APP_NAME")
+    model_name: str | None = Field(default=None, validation_alias="MODEL_NAME")
+    similarity_metric: str = Field(default="cosine", validation_alias="SIMILARITY_METRIC")
+    similarity_threshold: float = Field(default=0.55, validation_alias="SIMILARITY_THRESHOLD")
+    embeddings_path: Path = Field(default=Path("data/embeddings.json"), validation_alias="EMBEDDINGS_PATH")
+    data_path: Path = Field(default=Path("data"), validation_alias="DATA_PATH")
+    output_path: Path = Field(default=Path("output"), validation_alias="OUTPUT_PATH")
+    model_path: Path = Field(default=Path("lib/models"), validation_alias="MODEL_PATH")
+    max_workers: int = Field(default=2, validation_alias="MAX_WORKERS")
+    face_size: int = Field(default=112, validation_alias="FACE_SIZE")
+    embedding_dim: int = Field(default=512, validation_alias="EMBEDDING_DIM")
+    use_pgvector: bool = Field(default=True, validation_alias="USE_PGVECTOR")
+    postgres_host: str = Field(default="localhost", validation_alias="POSTGRES_HOST")
+    postgres_port: int = Field(default=5432, validation_alias="POSTGRES_PORT")
+    postgres_db: str = Field(default="vector_db", validation_alias="POSTGRES_DB")
+    postgres_user: str = Field(default="user", validation_alias="POSTGRES_USER")
+    postgres_password: str = Field(default="password", validation_alias="POSTGRES_PASSWORD")
 
 
 @lru_cache(maxsize=1)

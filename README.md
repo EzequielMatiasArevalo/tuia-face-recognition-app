@@ -10,6 +10,11 @@ Implementar una API asincronica en Python que permita:
 - Ejecutar inferencia sobre imagen o video (`/predict`)
 - Consultar estado de procesamiento asincronico (`/status/{job_id}`)
 
+Tambien se exponen aliases alineados con la consigna:
+
+- Registrar identidades (`/register`)
+- Ejecutar inferencia sobre imagen o video (`/inference`)
+
 La API responde `HTTP 202` con `job_id` y luego permite consultar resultado con estado:
 
 ```json
@@ -148,6 +153,17 @@ No hardcodear parametros. Configurar mediante `.env`:
 - PostgreSQL/pgvector: `localhost:5432`
 - Frontend (imagen provista por catedra): `http://localhost:8080`
 
+### Contrato async (paso 10)
+
+- `POST /register` (alias: `/insert`) -> encola registro y responde `202` con `job_id`
+- `POST /inference` (alias: `/predict`) -> encola prediccion y responde `202` con `job_id`
+- `GET /status/{job_id}` -> devuelve `done | inProgress | failed`, `link`, `reason` y URLs publicas para artefactos cuando aplica
+
+El flujo esperado es:
+1. subir imagen (`/upload`)
+2. encolar job (`/register` o `/inference`)
+3. consultar `status` hasta `done`/`failed`
+
 ## Pipeline implementado (base funcional)
 
 1. Deteccion de rostros con OpenCV Haar Cascade
@@ -171,11 +187,37 @@ Completar en la entrega final:
 
 Documentar:
 
-- Fuente de imagenes (propias + publicas/provistas)
+- Fuente de imagenes publicas/provistas
 - Cantidad por clase/persona
 - Balance de clases
 - Variaciones (iluminacion, pose, expresion)
 - Reglas de filtrado/calidad
+
+Para evitar datos personales, se recomienda usar LFW (`sklearn.datasets.fetch_lfw_people`) como dataset base.
+
+## Evaluacion y defensa (paso 16)
+
+Para facilitar evaluacion tecnica y demo, dejar evidencia en `train.ipynb` de:
+
+- Metricas del sistema (accuracy, precision, recall)
+- Curva ROC y criterio de threshold
+- Analisis de falsos positivos/falsos negativos
+- Visualizaciones de embeddings (PCA o t-SNE)
+- Capturas/resultados de demo end-to-end con `job_id` y salida del backend
+
+## CI (GitHub Actions)
+
+En cada push/PR a `main` o `master`:
+
+- `pytest` sobre `tests/` (contratos Pydantic + rutas API con `FaceService` mockeado; `docker compose config`; build de imagen `Dockerfile`.
+
+Local:
+
+```bash
+python -m pip install -r requirements.txt -r requirements-dev.txt
+python -m pytest tests/ -q
+docker compose config
+```
 
 ## Notas importantes
 
