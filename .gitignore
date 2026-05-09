@@ -7,7 +7,13 @@ output/*
 !output/.gitkeep
 model/*
 !model/.gitkeep
-*.pth
-*.onnx
 data/*
 .DS_Store
+result-*
+lfw_*
+*.pth
+*.onnx
+.agents/
+.agents
+skills-lock.json
+src/data/celebrities/

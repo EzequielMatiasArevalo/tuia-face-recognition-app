@@ -54,15 +54,13 @@ tp1/
 
 ## Configura tu modelo
 
-Entrena tu modelo y guardalo dentro de la carpeta models. Por defecto, el modulo soporta modelos construidos con pytorch validando la extension **.pth**.
-
-Si eligen utilizar otro framework, pueden exportarlo a formato **.onnx**
+Entrena tu modelo y guardalo dentro de la carpeta models. Por defecto, el modulo soporta modelos construidos con pytorch validando la extension **.pth**. Los requerimientos necesarios para la notebook de train se encuentran en el archivo **requirements-nb-train.txt**.
 
 Recuerda actulizar las configuraciones del .env correspondiente para actualizar la ruta hacia tu modelo.
 
-El entorno local con o sin docker reinicia la aplicacion y actualiza el codigo automaticamente si uitlizan docker compose. 
+El entorno local con o sin docker reinicia la aplicacion y actualiza el codigo automaticamente si utilizan docker compose. 
 
-Puede que el reinicio automatico no funcione en todas las versiones de Docker Desktop en sistemas *Windows*, en tal caso deberan correr los comandos como se mencionan en el siguiente apartado para actualizar el codigo dentro de docker.
+Puede que el reinicio automático no funcione en todas las versiones de Docker Desktop en sistemas *Windows*, en tal caso deberan correr los comandos como se mencionan en el siguiente apartado para actualizar el codigo dentro de docker.
 
 ## Opcion 1 - Corriendo dentro de docker
 
@@ -129,8 +127,14 @@ uvicorn frontend.app:app --port 8080
 Asegurate de configurar el archivo *.env.local.example* para que se adapte a tus necesidades.
 
 ```bash
+# 1. Asegúrate de tener el entorno virtual activado (como estás en src, usas ../)
+source ../.venv/bin/activate
+
+# 2. Copiamos el modelo y el archivo de variables de entorno
 cp ../models/<YOUR MODEL NAME>.pth models
-cp ../.env.local.example src/.env
+cp ../.env.local.example .env
+
+# 3. Levantamos el servidor
 uvicorn app.main:app --reload --port 8000 
 ```
 
