@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 from pathlib import Path
 from uuid import uuid4
 
 import cv2
 import numpy as np
-import torch
 import onnxruntime
+import torch
+from insightface.utils import face_align
+
 from lib.schemas import EmbeddingRecord, FaceDetection, PredictResult, AlignedFace
 from lib.storage.base import EmbeddingStoreProtocol
-import os 
-import logging
+
 
 logger = logging.getLogger(__name__)
 
@@ -58,49 +61,145 @@ class FaceService:
             for i in range(len(kps))
         }
 
-
     def _load_model(self, model_path: Path) -> any:
         mp = Path(model_path)
+
         if not mp.exists():
-            raise ValueError(f"Model path does not exist: {model_path}")
+            logger.warning(
+                f"Model path does not exist: {model_path}. Continuing without external model."
+            )
+            return None
+
         suf = mp.suffix.lower()
         if suf == ".pth":
             return torch.load(mp, map_location="cpu", weights_only=False)
         if suf == ".onnx":
             return onnxruntime.InferenceSession(str(mp))
+
         raise ValueError(f"Unsupported model format (expected .pth or .onnx): {model_path}")
 
     def _load_image(self, source_path: str) -> np.ndarray:
         image = cv2.imread(source_path)
         if image is None:
             raise ValueError(f"Could not read image: {source_path}")
-        # BGR uint8 (InsightFace / OpenCV convention)
         return image
 
-    def detect_faces(self, image: np.ndarray) -> list[tuple[int, int, int, int]]:
-        """
-        Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
-        Return a list of tuples with the coordinates of the faces detected in the image.
-        """
-        raise NotImplementedError("Not implemented")
+    def _get_face_detector(self):
+        try:
+            from insightface.app import FaceAnalysis
+        except ImportError as exc:
+            raise RuntimeError(
+                "InsightFace is not installed in this environment."
+            ) from exc
 
+        if not hasattr(self, "_face_detector"):
+            self._face_detector = FaceAnalysis(
+                name="buffalo_l",
+                providers=["CPUExecutionProvider"],
+            )
+            self._face_detector.prepare(
+                ctx_id=-1,
+                det_size=(640, 640),
+            )
+
+        return self._face_detector
+
+    def detect_faces(self, image: np.ndarray) -> list[tuple[int, int, int, int]]:
+        if image is None:
+            raise ValueError("Input image is None.")
+
+        detector = self._get_face_detector()
+        faces = detector.get(image)
+
+        boxes: list[tuple[int, int, int, int]] = []
+        height, width = image.shape[:2]
+
+        for face in faces:
+            x1, y1, x2, y2 = face.bbox.astype(int)
+
+            x1, y1, x2, y2 = self._clip_xyxy(
+                x1, y1, x2, y2, height, width
+            )
+
+            boxes.append((x1, y1, x2, y2))
+
+        return boxes
 
     def align_face(
         self, image: np.ndarray, box: tuple[int, int, int, int]
     ) -> AlignedFace:
-        """
-        Crop using box (x1, y1, x2, y2) and run FaceAnalysis on the crop.
-        Return an AlignedFace object.
-        """
-        raise NotImplementedError("Not implemented")
+        if image is None:
+            raise ValueError("Input image is None.")
+
+        detector = self._get_face_detector()
+        faces = detector.get(image)
+
+        if len(faces) == 0:
+            raise ValueError("No faces detected for alignment.")
+
+        x1, y1, x2, y2 = box
+
+        selected_face = None
+        best_iou = -1.0
+
+        for face in faces:
+            fx1, fy1, fx2, fy2 = face.bbox.astype(int)
+
+            inter_x1 = max(x1, fx1)
+            inter_y1 = max(y1, fy1)
+            inter_x2 = min(x2, fx2)
+            inter_y2 = min(y2, fy2)
+
+            inter_area = max(0, inter_x2 - inter_x1) * max(0, inter_y2 - inter_y1)
+            box_area = max(0, x2 - x1) * max(0, y2 - y1)
+            face_area = max(0, fx2 - fx1) * max(0, fy2 - fy1)
+            union_area = box_area + face_area - inter_area
+
+            iou = inter_area / union_area if union_area > 0 else 0.0
+
+            if iou > best_iou:
+                best_iou = iou
+                selected_face = face
+
+        if selected_face is None:
+            raise ValueError("Could not match detected face for alignment.")
+
+        aligned_image = face_align.norm_crop(
+            image,
+            landmark=selected_face.kps,
+            image_size=self.face_size,
+        )
+
+        # Guardamos el embedding ya calculado por InsightFace.
+        # Esto evita volver a detectar una cara dentro del recorte alineado.
+        if not hasattr(self, "_embedding_cache"):
+            self._embedding_cache = {}
+
+        self._embedding_cache[(x1, y1, x2, y2)] = selected_face.embedding.astype(np.float32)
+
+        kps_relative = selected_face.kps.copy()
+        kps_relative[:, 0] -= x1
+        kps_relative[:, 1] -= y1
+
+        return AlignedFace(
+            image=aligned_image,
+            bbox=[x1, y1, x2, y2],
+            keypoints=kps_relative.tolist(),
+        )
 
     def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
-        """
-        Extract embedding from face.
-        Return a list of floats representing the embedding of the face.
-        """
-        raise NotImplementedError("Not implemented")
-        
+        bbox = tuple(face.bbox)
+
+        if not hasattr(self, "_embedding_cache"):
+            raise ValueError("Embedding cache is not initialized.")
+
+        if bbox not in self._embedding_cache:
+            raise ValueError(f"No embedding found for aligned face bbox: {bbox}")
+
+        embedding = self._embedding_cache[bbox]
+
+        return embedding.astype(np.float32).tolist()
+
     def _cosine(self, a: np.ndarray, b: np.ndarray) -> float:
         denom = np.linalg.norm(a) * np.linalg.norm(b)
         if denom == 0:
@@ -125,6 +224,7 @@ class FaceService:
 
         best_label = "unknown"
         best_score = -1.0
+
         for record in records:
             score = self.similarity(query_embedding, record.embedding)
             if score > best_score:
@@ -133,6 +233,7 @@ class FaceService:
 
         if best_score < self.similarity_threshold:
             return "unknown", max(best_score, 0.0)
+
         return best_label, best_score
 
     def register_identity(
@@ -143,7 +244,7 @@ class FaceService:
 
         if len(faces) != 1:
             raise ValueError("Exactly one face must be detected for identity registration.")
-        
+
         logger.info(f"Face detected: {faces[0]}")
 
         box = faces[0]
@@ -152,7 +253,7 @@ class FaceService:
 
         img_id = str(uuid4())
         img_output_path = self.output_path / f"img_{img_id}.jpg"
-        
+
         record = EmbeddingRecord(
             id_imagen=str(uuid4()),
             embedding=embedding,
@@ -160,22 +261,27 @@ class FaceService:
             etiqueta=identity,
             metadata=metadata,
         )
-        self.store.append(record)
 
+        self.store.append(record)
         cv2.imwrite(str(img_output_path), aligned.image)
+
         logger.info(f"Identity registered: {identity} with image: {image_path}")
         return record
 
     def predict(self, source_path: str, output_path: Path) -> str:
         image = self._load_image(source_path)
         faces = self.detect_faces(image)
+
         detections: list[FaceDetection] = []
+
         for (x1, y1, x2, y2) in faces:
             aligned = self.align_face(image, (x1, y1, x2, y2))
             embedding = self.extract_embedding_from_face(aligned)
             label, score = self.identify(embedding)
+
             kps = getattr(aligned, "keypoints", None)
             kps_arr = np.asarray(kps) if kps is not None else None
+
             detections.append(
                 FaceDetection(
                     bbox=[x1, y1, x2, y2],
@@ -185,16 +291,22 @@ class FaceService:
                 )
             )
 
-        detected_people = sorted({item.label for item in detections if item.label != "unknown"})
+        detected_people = sorted(
+            {item.label for item in detections if item.label != "unknown"}
+        )
+
         result_payload = PredictResult(
             source_path=source_path,
             detections=detections,
             detected_people=detected_people,
         )
+
         output_path.mkdir(parents=True, exist_ok=True)
+
         result_file = output_path / f"result-{uuid4()}.json"
         result_file.write_text(
             json.dumps(result_payload.model_dump(), ensure_ascii=True, indent=2),
             encoding="utf-8",
         )
+
         return str(result_file)
