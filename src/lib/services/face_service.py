@@ -106,8 +106,7 @@ class FaceService:
         if image is None:
             raise ValueError(f"Could not read image: {source_path}")
         # BGR uint8 (InsightFace / OpenCV convention)
-        return image
-        # return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
     @staticmethod
     def _to_pil(image: np.ndarray) -> PIL.Image.Image:
@@ -223,8 +222,7 @@ class FaceService:
         )
         self.store.append(record)
 
-        cv2.imwrite(str(img_output_path), aligned.image)
-        # cv2.imwrite(str(img_output_path), cv2.cvtColor(aligned.image, cv2.COLOR_RGB2BGR))
+        cv2.imwrite(str(img_output_path), cv2.cvtColor(aligned.image, cv2.COLOR_RGB2BGR))
         logger.info(f"Identity registered: {identity} with image: {image_path}")
         return record
 
