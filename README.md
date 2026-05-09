@@ -1,185 +1,89 @@
-# TP1 - Sistema de Reconocimiento Facial
+# Sistema de Reconocimiento Facial - Trabajo Práctico - Computer Vision
 
-Plantilla base para desarrollar un sistema completo de deteccion, alineacion, extraccion de embeddings e identificacion/verificacion facial.
+![Python](https://img.shields.io/badge/Python-3.12-blue?style=for-the-badge&logo=python)
+![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)
+![Jupyter](https://img.shields.io/badge/Jupyter-F37626.svg?&style=for-the-badge&logo=Jupyter&logoColor=white)
+![OpenCV](https://img.shields.io/badge/OpenCV-27338e?style=for-the-badge&logo=OpenCV&logoColor=white)
 
-## Objetivo del backend
+## Miembros del Equipo
+- Calabozo, Nicolas Daniel
+- Lapolla, Martín Facundo
 
-Implementar una API asincronica en Python que permita:
+## Resumen del Proyecto y Stack Tecnológico
 
-- Registrar identidades (`/insert`)
-- Ejecutar inferencia sobre imagen o video (`/predict`)
-- Consultar estado de procesamiento asincronico (`/status/{job_id}`)
+El presente proyecto abarca el diseño, entrenamiento y despliegue de un sistema completo de **Reconocimiento Facial**. El backend es una API asincrónica implementada en Python que permite registrar identidades, ejecutar inferencias sobre imágenes o videos, y consultar el estado de los procesamientos de forma fluida.
 
-La API responde `HTTP 202` con `job_id` y luego permite consultar resultado con estado:
+El **Stack Tecnológico** empleado en este trabajo práctico incluye:
+- **Python 3.12** como lenguaje principal.
+- **PyTorch** y **Facenet-PyTorch** para implementar las arquitecturas de red neuronal de visión artificial. Específicamente, se utilizó **MTCNN** para la detección y alineación facial, e **InceptionResnetV1** como modelo base para realizar un proceso de *Fine-Tuning* y la extracción de características (*embeddings*).
+- **LFW (Labeled Faces in the Wild)** como el conjunto de datos base, junto con la librería **Albumentations** para la aplicación de *Data Augmentation* en un dataset propio enriquecido con imágenes adicionales de celebridades.
+- **Scikit-Learn** para análisis de métricas (evaluación con K-Nearest Neighbors, Curvas ROC/AUC, Accuracy, y reducción de dimensionalidad con PCA y t-SNE).
+- Base de datos **PostgreSQL** mediante la extensión **pgvector** para almacenar y persistir los *embeddings* extraídos y realizar búsquedas de similitud (midiendo distancias en el espacio vectorial).
+- Entorno **Docker** y **Docker Compose** para la contenedorización y orquestación unificada del backend, la base de datos y la interfaz gráfica de usuario (Frontend).
 
-```json
-{
-  "status": "done | inProgress | failed",
-  "link": "url | none"
-}
+## Preparando el ambiente local (Ejecución de Notebooks)
+
+Para ejecutar localmente el proceso de entrenamiento y exploración de datos en los notebooks de Jupyter (`train.ipynb`), se recomienda encarecidamente utilizar [**uv**](https://docs.astral.sh/uv/) para gestionar el entorno virtual y la instalación de dependencias, garantizando una configuración rápida y minimizando conflictos de versiones.
+
+### 1. Instalar uv
+
+Para usuarios de Linux o macOS:
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-## Estructura
-
-```text
-tp1/
-├── src/
-│   ├── app/
-│   │   └── main.py
-│   └── lib/
-│       ├── api.py
-│       ├── config.py
-│       ├── schemas.py
-│       ├── services/
-│       │   ├── face_service.py
-│       │   └── task_manager.py
-│       └── storage/
-│           └── embedding_store.py
-├── data/
-│   └── embeddings.json
-├── model/
-├── output/
-├── requirements.txt
-├── Dockerfile
-├── docker-compose.yml
-└── .env.example
+Para usuarios de Windows:
+```bash
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-# Preparando el ambiente local
+### 2. Configurar un entorno virtual con Python 3.12
 
-## Requisitios para trabajar de forma local
+```bash
+uv venv --python 3.12 .venv
+```
 
-- Python 3.12
-- Docker
+### 3. Activar el entorno virtual
 
-## Configura tu modelo
+En Linux/macOS:
+```bash
+source .venv/bin/activate
+```
+En Windows:
+```bash
+.venv\Scripts\activate
+```
 
-Entrena tu modelo y guardalo dentro de la carpeta models. Por defecto, el modulo soporta modelos construidos con pytorch validando la extension **.pth**.
+### 4. Instalar las dependencias del proyecto
 
-Si eligen utilizar otro framework, pueden exportarlo a formato **.onnx**
+```bash
+uv pip install -r requirements.txt
+```
 
-Recuerda actulizar las configuraciones del .env correspondiente para actualizar la ruta hacia tu modelo.
+De esta forma tendrás el ambiente correctamente configurado y listo para abrir el notebook mediante tu IDE favorito o ejecutando `jupyter notebook`.
 
-El entorno local con o sin docker reinicia la aplicacion y actualiza el codigo automaticamente si uitlizan docker compose. 
+## Corriendo la aplicación con Docker
 
-Puede que el reinicio automatico no funcione en todas las versiones de Docker Desktop en sistemas *Windows*, en tal caso deberan correr los comandos como se mencionan en el siguiente apartado para actualizar el codigo dentro de docker.
+Para levantar de manera íntegra toda la arquitectura de la aplicación (Frontend, Backend, y PostgreSQL con pgvector), el método recomendado y más directo es mediante Docker.
 
-## Opcion 1 - Corriendo dentro de docker
+### 1. Configurar variables de entorno
 
-### 1. Buildea y corre la aplicacion.
+Utilizá el archivo `.env.docker.example` de base para crear tu `.env`, ajustando las variables a tus necesidades y asegurándote de que los paths hacia tus modelos (*models*) sean los correctos.
 
-Actualiza el archivo **.env.docker.example** y ajustalo a tus necesidades. Luego corre desde el terminal :
+### 2. Construir y ejecutar los contenedores
+
+En la terminal, en la raíz del proyecto, ejecuta:
 
 ```bash
 docker compose build
 docker compose up -d
 ```
 
-## Opcion 2 - Configurando el ambiente local
+Una vez que los contenedores estén levantados y corriendo correctamente, podrás acceder a los siguientes servicios en tu navegador:
+- **Backend API:** `http://localhost:8000`
+- **Frontend UI:** `http://localhost:8080`
+- **Base de Datos PostgreSQL/pgvector:** `localhost:5432`
 
-### 1. Install uv
-
-Para usuarios de Linux o Mac:
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-Para usuarios de Windows :
-
-```bash
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-```
-
-[Link](!https://docs.astral.sh/uv/getting-started/installation/#__tabbed_1_1) a la documentacion de uv.
-
-### 2. Configura un ambiente virtual con python 3.12
-
-```bash
-uv venv --python 3.12 .venv
-```
-
-### 3. Activa el virtual environment
-
-```bash
-source .venv/bin/activate
-```
-
-### 4. Instala las dependencias.
-
-```bash
-uv pip install -r requirements.txt
-```
-
-### 5. Inicia la base de datos
-
-```bash
-docker compose up postgres -d
-```
-
-### 6. Incia el frontend
-
-```bash
-cd src
-uvicorn frontend.app:app --port 8080
-```
-
-### 7. Inicia el backend
-
-Asegurate de configurar el archivo *.env.local.example* para que se adapte a tus necesidades.
-
-```bash
-cp ../models/<YOUR MODEL NAME>.pth models
-cp ../.env.local.example src/.env
-uvicorn app.main:app --reload --port 8000 
-```
-
-## Configuracion
-
-No hardcodear parametros. Configurar mediante `.env`:
-
-1. En la ejecucion local copiar `.env.local.example` a `src/.env` dentro de la carpeta app
-2. Ajustar variables de modelo, paths y threshold
-3. Opcional ( habilitada por defecto ): configurar conexion a PostgreSQL + pgvector
-
-## Endpoints
-
-- Backend: `http://localhost:8000`
-- PostgreSQL/pgvector: `localhost:5432`
-- Frontend (imagen provista por catedra): `http://localhost:8080`
-
-## Pipeline implementado (base funcional)
-
-1. Deteccion de rostros con OpenCV Haar Cascade
-2. Alineacion geometrica simple (recorte + normalizacion a `FACE_SIZE`)
-3. Extraccion de embeddings (vector normalizado base)
-4. Busqueda por similitud configurable (`cosine` o `l2`)
-5. Manejo de desconocidos con `SIMILARITY_THRESHOLD`
-6. Persistencia configurable en JSON o PostgreSQL + pgvector (`USE_PGVECTOR`)
-
-## Modelo y fine-tuning
-
-Completar en la entrega final:
-
-- Arquitectura elegida (ResNet, EfficientNet, ViT, etc.)
-- Justificacion tecnica y trade-offs
-- Hiperparametros y proceso de fine-tuning
-- Analisis de errores (FP/FN)
-- Metricas: accuracy, precision, recall
-
-## Dataset
-
-Documentar:
-
-- Fuente de imagenes (propias + publicas/provistas)
-- Cantidad por clase/persona
-- Balance de clases
-- Variaciones (iluminacion, pose, expresion)
-- Reglas de filtrado/calidad
-
-## Notas importantes
-
-- La implementacion actual es una base operativa para pruebas end-to-end y debe evolucionarse al modelo entrenado del equipo.
-- Para usar `pgvector`, levantar `postgres` y definir `USE_PGVECTOR=true` en `.env`.
-- Colocar el modelo entrenado en `models` el cual debera estar disponible en un link con acceso de solo lectura publico para poder ser descargado por los docentes.
-
+*(Nota: El entorno local con o sin Docker actualiza el código automáticamente si utilizas Docker Compose. Si estás en Windows y el reinicio automático no funcionase, simplemente vuelve a construir la imagen de docker y a levantar los servicios).*
