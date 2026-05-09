@@ -12,9 +12,16 @@ from lib.schemas import EmbeddingRecord, FaceDetection, PredictResult, AlignedFa
 from lib.storage.base import EmbeddingStoreProtocol
 import os 
 import logging
+from insightface.app import FaceAnalysis
 
 logger = logging.getLogger(__name__)
 
+
+#-----------------------------------------------------------------------------------------------------
+# Inicializamos el modelo globalmente para que las 3 funciones lo puedan usar
+app_s = FaceAnalysis(name='buffalo_s', root='./modelos_insight', providers=['CPUExecutionProvider'])
+app_s.prepare(ctx_id=-1, det_size=(640, 640))
+#-----------------------------------------------------------------------------------------------------
 
 class FaceService:
     def __init__(
@@ -79,28 +86,92 @@ class FaceService:
 
     def detect_faces(self, image: np.ndarray) -> list[tuple[int, int, int, int]]:
         """
-        Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
-        Return a list of tuples with the coordinates of the faces detected in the image.
+        Detecta rostros y guarda los keypoints en memoria para usarlos en la alineación.
         """
-        raise NotImplementedError("Not implemented")
+        # 1. Usamos el detector de RetinaFace
+        bboxes, kpss = app_s.det_model.detect(image, max_num=0, metric='default')
+        
+        if bboxes is None or bboxes.shape[0] == 0:
+            return []
+            
+        # Guardamos los resultados en 'self' para no perder los keypoints
+        self._current_bboxes = bboxes
+        self._current_kpss = kpss
+        
+        faces_list = []
+        for box in bboxes:
+            # box trae 5 valores: [x1, y1, x2, y2, score]. Casteamos los primeros 4 a enteros.
+            x1, y1, x2, y2 = int(box[0]), int(box[1]), int(box[2]), int(box[3])
+            faces_list.append((x1, y1, x2, y2))
+            
+        return faces_list
 
 
-    def align_face(
-        self, image: np.ndarray, box: tuple[int, int, int, int]
-    ) -> AlignedFace:
+    def align_face(self, image: np.ndarray, box: tuple[int, int, int, int]) -> AlignedFace:
         """
-        Crop using box (x1, y1, x2, y2) and run FaceAnalysis on the crop.
-        Return an AlignedFace object.
+        Recupera los keypoints de la detección y realiza la alineación de 112x112.
         """
-        raise NotImplementedError("Not implemented")
+        from insightface.utils import face_align
+        
+        target_kps = None
+        
+        # Buscamos qué keypoints corresponden a esta caja específica
+        if hasattr(self, '_current_bboxes') and hasattr(self, '_current_kpss'):
+            for i, b in enumerate(self._current_bboxes):
+                # Comparamos con una tolerancia de 2 píxeles por los redondeos
+                if abs(int(b[0]) - box[0]) <= 2 and abs(int(b[1]) - box[1]) <= 2:
+                    target_kps = self._current_kpss[i]
+                    break
+                    
+        #  Hacemos el recorte
+        if target_kps is not None:
+            # Alineación matemática perfecta para MobileFaceNet
+            aligned_img = face_align.norm_crop(image, target_kps)
+        else:
+            # Fallback de seguridad por si se pasa una caja manual
+            x1, y1, x2, y2 = box
+            aligned_img = image[y1:y2, x1:x2]
+            
+        return AlignedFace(image=aligned_img, keypoints=target_kps, bbox=box)
 
     def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
         """
-        Extract embedding from face.
-        Return a list of floats representing the embedding of the face.
+        Toma la cara alineada, extrae el vector de 512 y lo convierte a lista de Python.
         """
-        raise NotImplementedError("Not implemented")
+        # Extraemos las características con MobileFaceNet 
+        embedding = app_s.models['recognition'].get_feat(face.image)
         
+        # 2. La firma de la función exige list[float], así que lo convertimos
+        return embedding.flatten().tolist()
+
+#------------------------------------------------------------------------------------------------------------------
+
+
+    # def detect_faces(self, image: np.ndarray) -> list[tuple[int, int, int, int]]:
+    #     """
+    #     Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
+    #     Return a list of tuples with the coordinates of the faces detected in the image.
+    #     """
+    #     raise NotImplementedError("Not implemented")
+
+
+    # def align_face(
+    #     self, image: np.ndarray, box: tuple[int, int, int, int]
+    # ) -> AlignedFace:
+    #     """
+    #     Crop using box (x1, y1, x2, y2) and run FaceAnalysis on the crop.
+    #     Return an AlignedFace object.
+    #     """
+    #     raise NotImplementedError("Not implemented")
+
+    # def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
+    #     """
+    #     Extract embedding from face.
+    #     Return a list of floats representing the embedding of the face.
+    #     """
+    #     raise NotImplementedError("Not implemented")
+
+
     def _cosine(self, a: np.ndarray, b: np.ndarray) -> float:
         denom = np.linalg.norm(a) * np.linalg.norm(b)
         if denom == 0:

@@ -9,5 +9,9 @@ model/*
 !model/.gitkeep
 *.pth
 *.onnx
-data/*
+data/lfw-dataset
+data/*.csv
 .DS_Store
+*.json
+*.zip
+data/dataset_propio

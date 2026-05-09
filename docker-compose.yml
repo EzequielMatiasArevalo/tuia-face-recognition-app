@@ -8,11 +8,12 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./.env.docker.example:/app/.env
+      - ./.env:/app/.env
       - ./src:/app
       - ./models:/app/models
       - ./output:/app/output
       - ./data:/app/data
+      - ./modelos_insight:/app/modelos_insight
     depends_on:
       - postgres
     entrypoint: ["uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
