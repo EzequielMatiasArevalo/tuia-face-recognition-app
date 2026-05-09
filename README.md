@@ -23,6 +23,13 @@ El **Stack Tecnológico** empleado en este trabajo práctico incluye:
 - Base de datos **PostgreSQL** mediante la extensión **pgvector** para almacenar y persistir los *embeddings* extraídos y realizar búsquedas de similitud (midiendo distancias en el espacio vectorial).
 - Entorno **Docker** y **Docker Compose** para la contenedorización y orquestación unificada del backend, la base de datos y la interfaz gráfica de usuario (Frontend).
 
+## Funcionalidades del Frontend
+
+La aplicación cuenta con una interfaz gráfica de usuario intuitiva que permite interactuar con la API del sistema de manera sencilla. Desde el frontend, los usuarios pueden:
+- **Realizar predicciones:** Cargar fotos nuevas para compararlas con los rostros almacenados en la base de datos y buscar coincidencias.
+- **Registrar nuevas entidades:** Ingresar y registrar rostros nuevos al sistema, guardando sus *embeddings* para que estén disponibles en futuras inferencias.
+- **Consultar tareas asincrónicas (Jobs):** Verificar el estado de procesamiento de los *jobs* enviados al backend, lo cual es ideal para tareas pesadas que se resuelven de forma asincrónica.
+
 ## Preparando el ambiente local (Ejecución de Notebooks)
 
 Para ejecutar localmente el proceso de entrenamiento y exploración de datos en los notebooks de Jupyter (`train.ipynb`), se recomienda encarecidamente utilizar [**uv**](https://docs.astral.sh/uv/) para gestionar el entorno virtual y la instalación de dependencias, garantizando una configuración rápida y minimizando conflictos de versiones.
