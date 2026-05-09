@@ -183,3 +183,5 @@ Documentar:
 - Para usar `pgvector`, levantar `postgres` y definir `USE_PGVECTOR=true` en `.env`.
 - Colocar el modelo entrenado en `models` el cual debera estar disponible en un link con acceso de solo lectura publico para poder ser descargado por los docentes.
 
+## Aclaraciones
+- No hay commits graduales debido a que siempre se trabajó en Colab (por la cpu)

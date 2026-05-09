@@ -12,6 +12,8 @@ from lib.schemas import EmbeddingRecord, FaceDetection, PredictResult, AlignedFa
 from lib.storage.base import EmbeddingStoreProtocol
 import os 
 import logging
+from facenet_pytorch import MTCNN, InceptionResnetV1
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 
@@ -78,28 +80,59 @@ class FaceService:
         return image
 
     def detect_faces(self, image: np.ndarray) -> list[tuple[int, int, int, int]]:
+        """Detecta caras. Retorna lista de (x1, y1, x2, y2).
+        Los keypoints quedan cacheados en self._kps_cache para que align_face los use.
         """
-        Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
-        Return a list of tuples with the coordinates of the faces detected in the image.
-        """
-        raise NotImplementedError("Not implemented")
+        if not hasattr(self, '_mtcnn'):
+            self._mtcnn = MTCNN(keep_all=True, device='cpu', post_process=False)
+
+        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        pil_img = Image.fromarray(rgb)
+
+        boxes, probs, points = self._mtcnn.detect(pil_img, landmarks=True)
+        self._kps_cache: dict[tuple, list | None] = {}
+        if boxes is None:
+            return []
+
+        h, w = image.shape[:2]
+        result = []
+        pts_iter = points if points is not None else [None] * len(boxes)
+        for box, prob, pts in zip(boxes, probs, pts_iter):
+            if prob is None or prob < 0.9:
+                continue
+            x1, y1, x2, y2 = self._clip_xyxy(int(box[0]), int(box[1]), int(box[2]), int(box[3]), h, w)
+            kps = [[int(round(float(p[0]))) - x1, int(round(float(p[1]))) - y1] for p in pts] if pts is not None else None
+            self._kps_cache[(x1, y1, x2, y2)] = kps
+            result.append((x1, y1, x2, y2))
+        return result
 
 
-    def align_face(
-        self, image: np.ndarray, box: tuple[int, int, int, int]
-    ) -> AlignedFace:
-        """
-        Crop using box (x1, y1, x2, y2) and run FaceAnalysis on the crop.
-        Return an AlignedFace object.
-        """
-        raise NotImplementedError("Not implemented")
+    def align_face(self, image: np.ndarray, box: tuple[int, int, int, int]) -> AlignedFace:
+        """Recorta y redimensiona la cara. Lee los keypoints del cache de detect_faces."""
+        x1, y1, x2, y2 = box
+        crop = image[y1:y2, x1:x2]
+        resized = cv2.resize(crop, (self.face_size, self.face_size))
+        kps = getattr(self, '_kps_cache', {}).get((x1, y1, x2, y2))
+        return AlignedFace(bbox=list(box), keypoints=kps, image=resized)
 
     def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
         """
         Extract embedding from face.
         Return a list of floats representing the embedding of the face.
         """
-        raise NotImplementedError("Not implemented")
+        if isinstance(self.model, dict):
+            net = InceptionResnetV1(pretrained=None, classify=False)
+            net.load_state_dict(self.model, strict=False)
+            self.model = net
+            logger.info("Modelo cargado desde state_dict como InceptionResnetV1")
+
+        rgb = cv2.cvtColor(face.image, cv2.COLOR_BGR2RGB)
+        tensor = torch.tensor(rgb, dtype=torch.float32).permute(2, 0, 1).unsqueeze(0)
+        tensor = (tensor / 255.0 - 0.5) / 0.5  # normalizar a [-1, 1] para FaceNet
+        self.model.eval()
+        with torch.no_grad():
+            embedding = self.model(tensor)
+        return embedding.squeeze().tolist()
         
     def _cosine(self, a: np.ndarray, b: np.ndarray) -> float:
         denom = np.linalg.norm(a) * np.linalg.norm(b)
@@ -143,10 +176,10 @@ class FaceService:
 
         if len(faces) != 1:
             raise ValueError("Exactly one face must be detected for identity registration.")
-        
-        logger.info(f"Face detected: {faces[0]}")
 
         box = faces[0]
+        logger.info(f"Face detected: {box}")
+
         aligned = self.align_face(image, box)
         embedding = self.extract_embedding_from_face(aligned)
 
