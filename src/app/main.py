@@ -28,12 +28,12 @@ app.include_router(face_router)
 
 @app.get("/health", tags=["health"])
 async def health() -> dict[str, str]:
+    # Sin MODEL_NAME: InsightFace buffalo_l está pre-descargado en la imagen Docker.
     if not settings.model_name:
-        logger.error("Model name is not set as environment variable")
-        raise HTTPException(status_code=500, detail="Model name is not set as environment variable")
-    if settings.model_name and not os.path.exists(f"{settings.model_path}/{settings.model_name}"):
+        logger.info("Usando InsightFace buffalo_l (pre-descargado en imagen Docker).")
+        return {"status": "ok", "model": "InsightFace buffalo_l"}
+    if not os.path.exists(f"{settings.model_path}/{settings.model_name}"):
         logger.error(f"Model path {settings.model_path}/{settings.model_name} does not exist")
         raise HTTPException(status_code=500, detail=f"Model path {settings.model_path}/{settings.model_name} does not exist")
-        
     logger.info(f"Model name is set to {settings.model_name} located at {settings.model_path}/{settings.model_name}")
     return {"status": "ok", "model": settings.model_name}
