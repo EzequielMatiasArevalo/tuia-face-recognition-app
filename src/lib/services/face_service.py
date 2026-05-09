@@ -60,15 +60,21 @@ class FaceService:
 
 
     def _load_model(self, model_path: Path) -> any:
-        mp = Path(model_path)
-        if not mp.exists():
-            raise ValueError(f"Model path does not exist: {model_path}")
-        suf = mp.suffix.lower()
-        if suf == ".pth":
-            return torch.load(mp, map_location="cpu", weights_only=False)
-        if suf == ".onnx":
-            return onnxruntime.InferenceSession(str(mp))
-        raise ValueError(f"Unsupported model format (expected .pth or .onnx): {model_path}")
+        import insightface
+        from insightface.app import FaceAnalysis
+
+        app = FaceAnalysis(providers=['CPUExecutionProvider'])
+        app.prepare(ctx_id=0, det_size=(640, 640))
+        return app
+        # mp = Path(model_path)
+        # if not mp.exists():
+        #     raise ValueError(f"Model path does not exist: {model_path}")
+        # suf = mp.suffix.lower()
+        # if suf == ".pth":
+        #     return torch.load(mp, map_location="cpu", weights_only=False)
+        # if suf == ".onnx":
+        #     return onnxruntime.InferenceSession(str(mp))
+        # raise ValueError(f"Unsupported model format (expected .pth or .onnx): {model_path}")
 
     def _load_image(self, source_path: str) -> np.ndarray:
         image = cv2.imread(source_path)
@@ -82,8 +88,14 @@ class FaceService:
         Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
         Return a list of tuples with the coordinates of the faces detected in the image.
         """
-        raise NotImplementedError("Not implemented")
+        cv2_img = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+        faces = self.model.get(cv2_img)
 
+        results = []
+
+        for face in faces:
+
+            results.append(face.bbox)
 
     def align_face(
         self, image: np.ndarray, box: tuple[int, int, int, int]
@@ -92,15 +104,31 @@ class FaceService:
         Crop using box (x1, y1, x2, y2) and run FaceAnalysis on the crop.
         Return an AlignedFace object.
         """
-        raise NotImplementedError("Not implemented")
+        faces = self.model.get(image)
+
+        for face in faces:
+
+            if np.allclose(face.bbox, box):
+
+                aligned = face.normed_embedding  # o aligned crop interno del modelo
+
+                return AlignedFace(
+                    image=face.norm_crop,   # rostro alineado 112x112
+                    keypoints=face.kps,
+                    embedding = face.embedding.tolist(),
+                    bbox=face.bbox
+                )
+
+        raise ValueError("Face not found")
 
     def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
         """
         Extract embedding from face.
         Return a list of floats representing the embedding of the face.
         """
-        raise NotImplementedError("Not implemented")
-        
+        return face.embedding
+        # raise NotImplementedError("Not implemented")
+
     def _cosine(self, a: np.ndarray, b: np.ndarray) -> float:
         denom = np.linalg.norm(a) * np.linalg.norm(b)
         if denom == 0:
