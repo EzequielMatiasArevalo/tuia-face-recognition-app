@@ -31,9 +31,9 @@ async def health() -> dict[str, str]:
     if not settings.model_name:
         logger.error("Model name is not set as environment variable")
         raise HTTPException(status_code=500, detail="Model name is not set as environment variable")
-    if settings.model_name and not os.path.exists(f"{settings.model_path}/{settings.model_name}"):
+    if settings.model_name.lower().endswith((".pth", ".onnx")) and not os.path.exists(f"{settings.model_path}/{settings.model_name}"):
         logger.error(f"Model path {settings.model_path}/{settings.model_name} does not exist")
         raise HTTPException(status_code=500, detail=f"Model path {settings.model_path}/{settings.model_name} does not exist")
-        
+
     logger.info(f"Model name is set to {settings.model_name} located at {settings.model_path}/{settings.model_name}")
     return {"status": "ok", "model": settings.model_name}
