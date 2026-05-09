@@ -1,0 +1,413 @@
+{
+  "threshold": 0.75,
+  "known_persons": {
+    "overall_accuracy": 77.19,
+    "details": {
+      "ambrogi": {
+        "correct": 11,
+        "total": 16,
+        "accuracy": 68.8
+      },
+      "gianfranco": {
+        "correct": 19,
+        "total": 22,
+        "accuracy": 86.4
+      },
+      "gianluca": {
+        "correct": 14,
+        "total": 20,
+        "accuracy": 70.0
+      },
+      "lucas": {
+        "correct": 14,
+        "total": 18,
+        "accuracy": 77.8
+      },
+      "matias": {
+        "correct": 17,
+        "total": 21,
+        "accuracy": 81.0
+      },
+      "roberto": {
+        "correct": 13,
+        "total": 17,
+        "accuracy": 76.5
+      }
+    }
+  },
+  "unknown_persons": {
+    "overall_rejection_rate": 0.0,
+    "details": {
+      "valentino": {
+        "correct_unknown": 0,
+        "total": 2,
+        "rejection_rate": 0.0
+      },
+      "otros": {
+        "correct_unknown": 0,
+        "total": 9,
+        "rejection_rate": 0.0
+      }
+    }
+  },
+  "varias_personas": [
+    {
+      "file": "varias_personas.jpg",
+      "faces": [
+        {
+          "predicted": "ambrogi",
+          "similarity": 0.939
+        },
+        {
+          "predicted": "gianfranco",
+          "similarity": 0.9743
+        }
+      ]
+    },
+    {
+      "file": "varias_personas_02.jpg",
+      "faces": [
+        {
+          "predicted": "gianfranco",
+          "similarity": 0.9848
+        },
+        {
+          "predicted": "gianfranco",
+          "similarity": 0.8073
+        }
+      ]
+    },
+    {
+      "file": "varias_personas_03.jpg",
+      "faces": [
+        {
+          "predicted": "lucas",
+          "similarity": 0.9649
+        },
+        {
+          "predicted": "gianluca",
+          "similarity": 0.8499
+        }
+      ]
+    },
+    {
+      "file": "varias_personas_04.jpg",
+      "faces": [
+        {
+          "predicted": "lucas",
+          "similarity": 0.976
+        },
+        {
+          "predicted": "gianluca",
+          "similarity": 0.9535
+        },
+        {
+          "predicted": "lucas",
+          "similarity": 0.9619
+        }
+      ]
+    },
+    {
+      "file": "varias_personas_05.jpg",
+      "faces": [
+        {
+          "predicted": "gianluca",
+          "similarity": 0.8917
+        },
+        {
+          "predicted": "gianluca",
+          "similarity": 0.8916
+        }
+      ]
+    },
+    {
+      "file": "varias_personas_06.jpg",
+      "faces": [
+        {
+          "predicted": "gianluca",
+          "similarity": 0.9685
+        },
+        {
+          "predicted": "gianluca",
+          "similarity": 0.9415
+        }
+      ]
+    },
+    {
+      "file": "varias_personas_07.jpeg",
+      "faces": [
+        {
+          "predicted": "roberto",
+          "similarity": 0.9168
+        },
+        {
+          "predicted": "gianluca",
+          "similarity": 0.9418
+        },
+        {
+          "predicted": "matias",
+          "similarity": 0.9194
+        }
+      ]
+    },
+    {
+      "file": "varias_personas_07.jpg",
+      "faces": [
+        {
+          "predicted": "gianfranco",
+          "similarity": 0.9183
+        },
+        {
+          "predicted": "gianluca",
+          "similarity": 0.9434
+        },
+        {
+          "predicted": "Tony Blair",
+          "similarity": 0.8697
+        },
+        {
+          "predicted": "ambrogi",
+          "similarity": 0.9057
+        }
+      ]
+    },
+    {
+      "file": "varias_personas_08.jpg",
+      "faces": [
+        {
+          "predicted": "gianluca",
+          "similarity": 0.9493
+        },
+        {
+          "predicted": "roberto",
+          "similarity": 0.9407
+        }
+      ]
+    },
+    {
+      "file": "varias_personas_09.jpg",
+      "faces": [
+        {
+          "predicted": "ambrogi",
+          "similarity": 0.9211
+        },
+        {
+          "predicted": "gianfranco",
+          "similarity": 0.9169
+        }
+      ]
+    },
+    {
+      "file": "varias_personas_10.jpg",
+      "faces": [
+        {
+          "predicted": "roberto",
+          "similarity": 0.903
+        }
+      ]
+    },
+    {
+      "file": "varias_personas_11.jpeg",
+      "faces": [
+        {
+          "predicted": "gianluca",
+          "similarity": 0.9105
+        },
+        {
+          "predicted": "gianluca",
+          "similarity": 0.9729
+        },
+        {
+          "predicted": "ambrogi",
+          "similarity": 0.8464
+        }
+      ]
+    },
+    {
+      "file": "varias_personas_12.jpg",
+      "faces": [
+        {
+          "predicted": "matias",
+          "similarity": 0.9247
+        },
+        {
+          "predicted": "gianfranco",
+          "similarity": 0.9209
+        }
+      ]
+    },
+    {
+      "file": "varias_personas_13.jpg",
+      "faces": [
+        {
+          "predicted": "matias",
+          "similarity": 0.9674
+        },
+        {
+          "predicted": "gianfranco",
+          "similarity": 0.964
+        }
+      ]
+    },
+    {
+      "file": "varias_personas_14.jpg",
+      "faces": [
+        {
+          "predicted": "gianfranco",
+          "similarity": 0.9811
+        },
+        {
+          "predicted": "matias",
+          "similarity": 0.9781
+        }
+      ]
+    },
+    {
+      "file": "varias_personas_15.jpg",
+      "faces": [
+        {
+          "predicted": "gianfranco",
+          "similarity": 0.9323
+        },
+        {
+          "predicted": "gianluca",
+          "similarity": 0.9088
+        },
+        {
+          "predicted": "ambrogi",
+          "similarity": 0.8715
+        }
+      ]
+    },
+    {
+      "file": "varias_personas_16.jpg",
+      "faces": [
+        {
+          "predicted": "roberto",
+          "similarity": 0.9647
+        },
+        {
+          "predicted": "matias",
+          "similarity": 0.9483
+        }
+      ]
+    },
+    {
+      "file": "varias_personas_17.jpg",
+      "faces": [
+        {
+          "predicted": "ambrogi",
+          "similarity": 0.9458
+        },
+        {
+          "predicted": "matias",
+          "similarity": 0.9575
+        }
+      ]
+    },
+    {
+      "file": "varias_personas_18.jpg",
+      "faces": [
+        {
+          "predicted": "roberto",
+          "similarity": 0.8822
+        },
+        {
+          "predicted": "ambrogi",
+          "similarity": 0.8936
+        }
+      ]
+    },
+    {
+      "file": "varias_personas_19.jpg",
+      "faces": [
+        {
+          "predicted": "gianluca",
+          "similarity": 0.9699
+        },
+        {
+          "predicted": "gianluca",
+          "similarity": 0.9838
+        }
+      ]
+    },
+    {
+      "file": "varias_personas_20.jpg",
+      "faces": [
+        {
+          "predicted": "ambrogi",
+          "similarity": 0.9106
+        },
+        {
+          "predicted": "ambrogi",
+          "similarity": 0.9547
+        }
+      ]
+    },
+    {
+      "file": "varias_personas_21.jpg",
+      "faces": [
+        {
+          "predicted": "gianfranco",
+          "similarity": 0.9663
+        },
+        {
+          "predicted": "matias",
+          "similarity": 0.9719
+        }
+      ]
+    },
+    {
+      "file": "varias_personas_22.jpg",
+      "faces": [
+        {
+          "predicted": "gianluca",
+          "similarity": 0.9602
+        },
+        {
+          "predicted": "gianfranco",
+          "similarity": 0.9448
+        }
+      ]
+    },
+    {
+      "file": "varias_personas_23.jpg",
+      "faces": [
+        {
+          "predicted": "matias",
+          "similarity": 0.9357
+        },
+        {
+          "predicted": "matias",
+          "similarity": 0.9307
+        }
+      ]
+    },
+    {
+      "file": "varias_personas_24.jpg",
+      "faces": [
+        {
+          "predicted": "matias",
+          "similarity": 0.9148
+        },
+        {
+          "predicted": "gianluca",
+          "similarity": 0.9571
+        }
+      ]
+    },
+    {
+      "file": "varias_personas_25.jpg",
+      "faces": [
+        {
+          "predicted": "gianluca",
+          "similarity": 0.9641
+        },
+        {
+          "predicted": "gianfranco",
+          "similarity": 0.9731
+        }
+      ]
+    }
+  ]
+}

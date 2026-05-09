@@ -1,0 +1,31 @@
+# Entornos virtuales
+.venv
+venv
+
+# Git
+.git
+.gitignore
+
+# Dataset y modelos (se montan como volumen, no se copian)
+Dataset
+models
+output
+train_metrics
+Graphics
+
+# Checkpoints de Jupyter
+.ipynb_checkpoints
+*.ipynb
+
+# Cache de Python
+__pycache__
+*.pyc
+*.pyo
+
+# Otros
+.env*
+!.env.docker.example
+*.html
+*.md
+data
+init-db

@@ -14,8 +14,10 @@ services:
       - ./output:/app/output
       - ./data:/app/data
     depends_on:
-      - postgres
-    entrypoint: ["uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
+      postgres:
+        condition: service_healthy
+    command: ["uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
+
   postgres:
     image: pgvector/pgvector:pg17
     ports:
@@ -26,20 +28,13 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-faces_pass}
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:-faces_user}", "-d", "${POSTGRES_DB:-faces}"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 10s
     volumes:
       - pgdata:/var/lib/postgresql/data
-    post_start:
-      - command:
-          - psql
-          - -U
-          - ${POSTGRES_USER:-faces_user}
-          - -d
-          - ${POSTGRES_DB:-faces}
-          - -c
-          - CREATE EXTENSION IF NOT EXISTS vector;
+      - ./init-db:/docker-entrypoint-initdb.d
 
   frontend:
     build:
@@ -51,7 +46,41 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - backend
+      backend:
+        condition: service_started
+
+  # ── Jupyter (CPU) ────────────────────────────────────────────
+  jupyter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jupyter
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./:/app
+    entrypoint: ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root", "--NotebookApp.token=''", "--NotebookApp.password=''"]
+
+  # ── Jupyter (GPU — requiere nvidia-container-toolkit) ───────
+  # Usar con:  docker compose --profile gpu up jupyter-gpu
+  jupyter-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    container_name: jupyter-gpu
+    profiles: ["gpu"]
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./:/app
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    entrypoint: ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root", "--NotebookApp.token=''", "--NotebookApp.password=''"]
 
 volumes:
   pgdata:

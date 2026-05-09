@@ -1,185 +1,247 @@
-# TP1 - Sistema de Reconocimiento Facial
+# TP1 — Sistema de Reconocimiento Facial
 
-Plantilla base para desarrollar un sistema completo de deteccion, alineacion, extraccion de embeddings e identificacion/verificacion facial.
+**Materia:** Computación Visual — TUIA  
+**Alumnos:** Gianfranco Frattini, Matias Prado
 
-## Objetivo del backend
+Sistema completo de reconocimiento facial basado en un pipeline de 4 etapas: **Detección → Alineación → Extracción de Embeddings → Identificación/Verificación**. Incluye una API REST asíncrona (FastAPI), persistencia con PostgreSQL + pgvector, y un frontend web.
 
-Implementar una API asincronica en Python que permita:
+---
 
-- Registrar identidades (`/insert`)
-- Ejecutar inferencia sobre imagen o video (`/predict`)
-- Consultar estado de procesamiento asincronico (`/status/{job_id}`)
-
-La API responde `HTTP 202` con `job_id` y luego permite consultar resultado con estado:
-
-```json
-{
-  "status": "done | inProgress | failed",
-  "link": "url | none"
-}
-```
-
-## Estructura
+## Estructura del Proyecto
 
 ```text
-tp1/
-├── src/
-│   ├── app/
-│   │   └── main.py
-│   └── lib/
-│       ├── api.py
-│       ├── config.py
-│       ├── schemas.py
-│       ├── services/
-│       │   ├── face_service.py
-│       │   └── task_manager.py
-│       └── storage/
-│           └── embedding_store.py
-├── data/
-│   └── embeddings.json
-├── model/
-├── output/
-├── requirements.txt
-├── Dockerfile
-├── docker-compose.yml
-└── .env.example
+tuia-face-recognition-app/
+├── src/                          # Código fuente de la aplicación
+│   ├── app/main.py               # Punto de entrada FastAPI
+│   ├── lib/
+│   │   ├── api.py                # Rutas de la API
+│   │   ├── config.py             # Configuración desde .env
+│   │   ├── schemas.py            # Schemas Pydantic
+│   │   ├── services/
+│   │   │   ├── face_service.py   # Pipeline de reconocimiento
+│   │   │   └── task_manager.py   # Manejo de tareas asíncronas
+│   │   └── storage/
+│   │       └── embedding_store.py # Persistencia (JSON / pgvector)
+│   └── frontend/                 # Frontend Gradio
+├── Dataset/                      # Imágenes por persona (custom)
+├── Inferencia/                   # Imágenes externas para test de inferencia
+├── models/                       # Modelo entrenado (.pth)
+├── Graphics/                     # Gráficos de entrenamiento y evaluación
+├── train_metrics/                # Métricas del entrenamiento (log + JSON)
+├── output/                       # Resultados de inferencia del backend
+├── data/                         # Embeddings persistidos
+├── init-db/                      # Scripts de inicialización PostgreSQL
+├── train.ipynb                   # Notebook de entrenamiento completo
+├── evaluate.py                   # Script de evaluación (PCA, t-SNE)
+├── seed_db.py                    # Carga inicial de embeddings a BD
+├── Dockerfile                    # Imagen Docker (CPU)
+├── Dockerfile.gpu                # Imagen Docker (GPU — NVIDIA CUDA)
+├── Dockerfile.frontend           # Imagen Docker del frontend
+├── docker-compose.yml            # Orquestación de servicios
+├── requirements.txt              # Dependencias Python
+└── README.md
 ```
 
-# Preparando el ambiente local
+---
 
-## Requisitios para trabajar de forma local
+## Requisitos Previos
 
-- Python 3.12
-- Docker
+- **Docker** y **Docker Compose** (v2+)
+- **Python 3.12** (solo si se trabaja en entorno local sin Docker)
+- **NVIDIA Container Toolkit** (solo para entrenamiento con GPU)
 
-## Configura tu modelo
+---
 
-Entrena tu modelo y guardalo dentro de la carpeta models. Por defecto, el modulo soporta modelos construidos con pytorch validando la extension **.pth**.
+## Entrenamiento del Modelo
 
-Si eligen utilizar otro framework, pueden exportarlo a formato **.onnx**
+El proceso completo de entrenamiento está documentado en [`train.ipynb`](train.ipynb).
 
-Recuerda actulizar las configuraciones del .env correspondiente para actualizar la ruta hacia tu modelo.
+### Opción 1: Entrenar con Docker (GPU — NVIDIA) ⚡ Recomendado
 
-El entorno local con o sin docker reinicia la aplicacion y actualiza el codigo automaticamente si uitlizan docker compose. 
-
-Puede que el reinicio automatico no funcione en todas las versiones de Docker Desktop en sistemas *Windows*, en tal caso deberan correr los comandos como se mencionan en el siguiente apartado para actualizar el codigo dentro de docker.
-
-## Opcion 1 - Corriendo dentro de docker
-
-### 1. Buildea y corre la aplicacion.
-
-Actualiza el archivo **.env.docker.example** y ajustalo a tus necesidades. Luego corre desde el terminal :
+Requiere [`nvidia-container-toolkit`](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) instalado.
 
 ```bash
+docker compose --profile gpu up jupyter-gpu --build
+```
+
+Luego abrí http://localhost:8888 y ejecutá `train.ipynb`.  
+El notebook detecta automáticamente la GPU (`cuda` vs `cpu`).
+
+### Opción 2: Entrenar con Docker (CPU)
+
+```bash
+docker compose up jupyter --build
+```
+
+Luego abrí http://localhost:8888 y ejecutá `train.ipynb`.
+
+### Opción 3: Entrenar en entorno local
+
+```bash
+# Crear entorno virtual
+uv venv --python 3.12 .venv
+source .venv/bin/activate         # Linux/Mac
+# .venv\Scripts\activate          # Windows
+
+# Instalar dependencias
+uv pip install -r requirements.txt
+
+# Abrir Jupyter
+jupyter lab
+```
+
+### Salidas del entrenamiento
+
+El notebook genera automáticamente:
+
+| Carpeta | Archivo | Descripción |
+|---------|---------|-------------|
+| `models/` | `face_detection.pth` | Modelo entrenado (mejor val accuracy) |
+| `Graphics/` | `balanceo_antes_despues.png` | Comparación antes/después del balanceo |
+| `Graphics/` | `distribucion_clases_train.png` | Balance de clases en el dataset |
+| `Graphics/` | `loss_vs_epochs.png` | Curva de Loss (train + validation) |
+| `Graphics/` | `accuracy_vs_epochs.png` | Curva de Accuracy (train + validation) |
+| `Graphics/` | `confusion_matrix.png` | Matriz de confusión sobre validación |
+| `Graphics/` | `auc_roc.png` | Curva AUC-ROC multiclase (One-vs-Rest) |
+| `Graphics/` | `inferencia_similitudes.png` | Distribución de similitudes (inferencia) |
+| `Graphics/` | `inferencia_accuracy.png` | Accuracy por persona (inferencia) |
+| `train_metrics/` | `train_metrics.log` | Registro legible del entrenamiento |
+| `train_metrics/` | `train_metrics.json` | Métricas estructuradas en JSON |
+| `train_metrics/` | `inference_report.json` | Reporte de evaluación de inferencia |
+
+---
+
+## Levantar la Aplicación Completa
+
+```bash
+# Buildear y levantar todos los servicios
 docker compose build
 docker compose up -d
 ```
 
-## Opcion 2 - Configurando el ambiente local
+### Endpoints
 
-### 1. Install uv
+| Servicio | URL |
+|----------|-----|
+| Backend (API) | http://localhost:8000 |
+| Frontend | http://localhost:8080 |
+| PostgreSQL | `localhost:5432` |
+| Jupyter (CPU) | http://localhost:8888 |
 
-Para usuarios de Linux o Mac:
+### API REST
 
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
+- `POST /insert` — Registrar una identidad (imagen + nombre)
+- `POST /predict` — Ejecutar inferencia sobre imagen o video
+- `GET /status/{job_id}` — Consultar estado de procesamiento asíncrono
+
+---
+
+## Pipeline de Reconocimiento Facial
+
+### 1. Detección
+Módulo de detección de **InsightFace** (`buffalo_s`) para extraer bounding boxes y 5 keypoints faciales.
+
+### 2. Alineación
+Transformación afín basada en los keypoints para normalizar la posición de ojos, nariz y boca a coordenadas estándar.
+
+### 3. Extracción de Embeddings
+Red **ResNet-50** (fine-tuned) que proyecta cada rostro alineado a un vector de **512 dimensiones**, normalizado L2.
+
+### 4. Identificación / Verificación
+Comparación por **similitud coseno** contra los embeddings almacenados. Umbral configurable (`SIMILARITY_THRESHOLD`).
+
+---
+
+## Modelo y Fine-Tuning
+
+- **Arquitectura:** ResNet-50 pre-entrenada (ImageNet) + capa de embedding (512-d)
+- **Hiperparámetros:** 50 épocas, Adam (lr=1e-4, weight_decay=1e-4), batch size 32
+- **Data Augmentation:** Flip, rotación, affine, color jitter, blur, grayscale
+
+---
+
+## Dataset y Estrategia de Balanceo
+
+### Fuentes de datos
+
+- **LFW (Labeled Faces in the Wild):** Personalidades públicas con ≥70 imágenes (7 clases)
+- **Custom:** Imágenes propias de los integrantes del equipo (6 clases)
+- **Valentino:** Excluido del entrenamiento para validación de "desconocido"
+
+### Balanceo: Undersampling + Oversampling
+
+Para evitar sesgos, se aplica una estrategia de balanceo doble con un target de **40 imágenes por clase**:
+
+- **Undersampling (LFW):** Las clases de LFW que superan las 40 imágenes se submuestrean aleatoriamente al target.
+- **Oversampling (Locales):** Las clases locales que tienen menos de 40 imágenes se sobremuestrean (duplicación + data augmentation agresiva).
+
+Esto asegura una distribución uniforme de ~40 imágenes por clase en el conjunto de entrenamiento, evitando que el modelo se sesgue hacia las clases con más datos.
+
+---
+
+## Evaluación de Inferencia Externa
+
+La carpeta `Inferencia/` contiene imágenes completamente externas al dataset de entrenamiento, organizadas por persona:
+
+```text
+Inferencia/
+├── ambrogi/          # Persona conocida
+├── gianfranco/       # Persona conocida
+├── gianluca/         # Persona conocida
+├── lucas/            # Persona conocida
+├── matias/           # Persona conocida
+├── roberto/          # Persona conocida
+├── valentino/        # Persona desconocida (excluida del entrenamiento)
+├── otros/            # Personas completamente desconocidas
+└── varias_personas/  # Imágenes con múltiples rostros
 ```
 
-Para usuarios de Windows :
+El notebook evalúa automáticamente:
+- **Accuracy** para personas conocidas (si las identifica correctamente)
+- **Tasa de rechazo** para desconocidos (si las marca como "desconocido")
+- **Detección múltiple** para imágenes con varias personas
+- Umbral de similitud: **0.75**
+
+---
+
+## Evaluación Visual (PCA / t-SNE)
+
+El script `evaluate.py` genera:
+- **PCA** y **t-SNE** de los embeddings faciales (incluyendo Valentino como "unknown")
+- Reporte JSON con similitud intra-clase y vecino más cercano de Valentino
 
 ```bash
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+# Dentro del contenedor jupyter o en entorno local
+python evaluate.py
 ```
 
-[Link](!https://docs.astral.sh/uv/getting-started/installation/#__tabbed_1_1) a la documentacion de uv.
+---
 
-### 2. Configura un ambiente virtual con python 3.12
+## Configuración
 
-```bash
-uv venv --python 3.12 .venv
-```
+Configurar mediante archivos `.env`:
 
-### 3. Activa el virtual environment
+1. **Docker:** Editar `.env.docker.example`
+2. **Local:** Copiar `.env.local.example` a `src/.env`
 
-```bash
-source .venv/bin/activate
-```
+Variables principales:
 
-### 4. Instala las dependencias.
+| Variable | Descripción | Default |
+|----------|-------------|---------|
+| `MODEL_NAME` | Nombre del archivo del modelo | `face_detection.pth` |
+| `SIMILARITY_THRESHOLD` | Umbral de similitud coseno | `0.90` |
+| `USE_PGVECTOR` | Usar PostgreSQL + pgvector | `true` |
+| `EMBEDDING_DIM` | Dimensión del embedding | `512` |
+| `FACE_SIZE` | Tamaño de rostro alineado | `112` |
 
-```bash
-uv pip install -r requirements.txt
-```
+---
 
-### 5. Inicia la base de datos
+## Notas Importantes
 
-```bash
-docker compose up postgres -d
-```
-
-### 6. Incia el frontend
-
-```bash
-cd src
-uvicorn frontend.app:app --port 8080
-```
-
-### 7. Inicia el backend
-
-Asegurate de configurar el archivo *.env.local.example* para que se adapte a tus necesidades.
-
-```bash
-cp ../models/<YOUR MODEL NAME>.pth models
-cp ../.env.local.example src/.env
-uvicorn app.main:app --reload --port 8000 
-```
-
-## Configuracion
-
-No hardcodear parametros. Configurar mediante `.env`:
-
-1. En la ejecucion local copiar `.env.local.example` a `src/.env` dentro de la carpeta app
-2. Ajustar variables de modelo, paths y threshold
-3. Opcional ( habilitada por defecto ): configurar conexion a PostgreSQL + pgvector
-
-## Endpoints
-
-- Backend: `http://localhost:8000`
-- PostgreSQL/pgvector: `localhost:5432`
-- Frontend (imagen provista por catedra): `http://localhost:8080`
-
-## Pipeline implementado (base funcional)
-
-1. Deteccion de rostros con OpenCV Haar Cascade
-2. Alineacion geometrica simple (recorte + normalizacion a `FACE_SIZE`)
-3. Extraccion de embeddings (vector normalizado base)
-4. Busqueda por similitud configurable (`cosine` o `l2`)
-5. Manejo de desconocidos con `SIMILARITY_THRESHOLD`
-6. Persistencia configurable en JSON o PostgreSQL + pgvector (`USE_PGVECTOR`)
-
-## Modelo y fine-tuning
-
-Completar en la entrega final:
-
-- Arquitectura elegida (ResNet, EfficientNet, ViT, etc.)
-- Justificacion tecnica y trade-offs
-- Hiperparametros y proceso de fine-tuning
-- Analisis de errores (FP/FN)
-- Metricas: accuracy, precision, recall
-
-## Dataset
-
-Documentar:
-
-- Fuente de imagenes (propias + publicas/provistas)
-- Cantidad por clase/persona
-- Balance de clases
-- Variaciones (iluminacion, pose, expresion)
-- Reglas de filtrado/calidad
-
-## Notas importantes
-
-- La implementacion actual es una base operativa para pruebas end-to-end y debe evolucionarse al modelo entrenado del equipo.
-- Para usar `pgvector`, levantar `postgres` y definir `USE_PGVECTOR=true` en `.env`.
-- Colocar el modelo entrenado en `models` el cual debera estar disponible en un link con acceso de solo lectura publico para poder ser descargado por los docentes.
-
+- El modelo entrenado final (necesario para el backend) puede descargarse desde este link:
+  [Descargar face_detection.pth (Google Drive)](https://drive.google.com/file/d/1ZS7S05jn04c9TUVDIZfl9r0AqhiXgWle/view?usp=sharing)
+  El archivo debe colocarse en la carpeta `models/` (es decir, `models/face_detection.pth`).
+  **Nota:** Si ejecutás el proyecto usando Docker, el script `entrypoint.sh` intentará descargar automáticamente el modelo desde Google Drive si no encuentra el archivo en la carpeta `models/`.
+- Para usar `pgvector`, levantar `postgres` y definir `USE_PGVECTOR=true` en `.env`
+- El entrenamiento con GPU requiere NVIDIA Container Toolkit instalado en el host
+- La carpeta `Inferencia/` no se incluye en la imagen Docker (se monta como volumen)

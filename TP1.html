@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trabajo Práctico N°1 - Computer Vision</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            margin: 0 auto;
+            max-width: 900px;
+            padding: 30px;
+            color: #333;
+            background-color: #fcfcfc;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        h1,
+        h2,
+        h3 {
+            color: #2c3e50;
+        }
+
+        h1 {
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+
+        h2 {
+            margin-top: 30px;
+            border-bottom: 1px solid #ecf0f1;
+            padding-bottom: 5px;
+        }
+
+        ul,
+        ol {
+            margin-bottom: 20px;
+        }
+
+        pre {
+            background-color: #f4f6f7;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #dcdde1;
+            overflow-x: auto;
+        }
+
+        code {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #f4f6f7;
+            padding: 2px 5px;
+            border-radius: 4px;
+            color: #c0392b;
+        }
+
+        pre code {
+            background-color: transparent;
+            padding: 0;
+            color: #2c3e50;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background-color: #fff;
+        }
+
+        th,
+        td {
+            border: 1px solid #bdc3c7;
+            padding: 12px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #ecf0f1;
+            color: #2c3e50;
+        }
+
+        hr {
+            border: 0;
+            height: 1px;
+            background: #bdc3c7;
+            margin: 30px 0;
+        }
+
+        .highlight {
+            font-weight: bold;
+            color: #2980b9;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="header">
+        <h1>FCEIA - UNR</h1>
+        <p><strong>FACULTAD DE CIENCIAS EXACTAS, INGENIERIA Y AGRIMENSURA</strong><br>
+            Universidad Nacional de Rosario</p>
+        <hr>
+        <h2>Trabajo Práctico N°1</h2>
+        <p><strong>Materia:</strong> IA 5.2 Computer Vision<br>
+            <strong>Período:</strong> 1° Cuatrimestre 2026
+        </p>
+    </div>
+
+    <h1>Sistema de Reconocimiento Facial</h1>
+
+    <h2>1. Introducción</h2>
+    <p>El objetivo de este trabajo práctico es consolidar y aplicar los conocimientos adquiridos en las primeras
+        unidades de la materia de Computer Vision, integrando conceptos teóricos con la implementación de un sistema
+        real de reconocimiento facial. Se espera que el estudiante no solo comprenda cómo construir un sistema, sino
+        también por qué se toman determinadas decisiones de diseño, analizando los trade-offs entre precisión, costo
+        computacional y complejidad del sistema.</p>
+
+    <p>El pipeline implementado deberá seguir el enfoque estándar de sistemas modernos:<br>
+        <span class="highlight">Detección &rarr; Alineación &rarr; Embeddings &rarr; Comparación</span>
+    </p>
+
+    <p>El siguiente enlace provisto corresponde a una función del backend que forma parte del pipeline (servicio de
+        procesamiento facial) y resulta relevante para comprender la integración del sistema. Deberá realizarse un fork
+        del repositorio provisto por la cátedra como template del trabajo practico.</p>
+
+    <h2>2. Objetivo</h2>
+    <p>Desarrollar un sistema completo de reconocimiento e identificación facial, capaz de:</p>
+    <ul>
+        <li>Detectar rostros en imágenes o video</li>
+        <li>Extraer representaciones (embeddings)</li>
+        <li>Identificar o verificar personas conocidas y manejar casos de desconocidos</li>
+    </ul>
+
+    <h3>Alcances</h3>
+    <ul>
+        <li><strong>Repositorio base:</strong> El estudiante deberá realizar un fork del repositorio provisto por la
+            cátedra.</li>
+    </ul>
+
+    <h2>3. Alcance del sistema</h2>
+    <p>El trabajo deberá cubrir el pipeline completo de un sistema moderno de reconocimiento facial:</p>
+    <ol>
+        <li>Detección de rostros</li>
+        <li>Alineación facial (normalización geométrica)</li>
+        <li>Extracción de embeddings</li>
+        <li>Identificación / verificación</li>
+    </ol>
+    <p>Se recomienda desacoplar cada etapa para facilitar testing, debugging y extensibilidad.</p>
+
+    <h3>Restricciones de implementación</h3>
+    <p>La cátedra proveerá la arquitectura completa (frontend + backend + base de datos). El estudiante deberá
+        implementar o reemplazar las siguientes funciones:</p>
+    <ul>
+        <li><code>align face</code></li>
+        <li><code>detect faces</code></li>
+        <li><code>extract embedding from face</code></li>
+    </ul>
+    <p>Cualquier modificación adicional en el backend deberá estar debidamente justificada.</p>
+
+    <h2>4. Alcance del trabajo práctico</h2>
+    <p>El trabajo deberá incluir en la notebook de python <code>train.ipynb</code> la documentacion necesaria de los
+        siguientes elementos:</p>
+
+    <h3>Dataset</h3>
+    <p>Se deberá:</p>
+    <ul>
+        <li>Construir un dataset propio (familiares, amigos, etc.)</li>
+        <li>Complementar con datasets públicos o utilizados por la cátedra</li>
+    </ul>
+    <p><strong>Recomendaciones:</strong></p>
+    <ul>
+        <li>Variar condiciones (iluminación, pose, expresión) y mantener balance de clases</li>
+        <li>Documentar el dataset (cantidad de imágenes por persona, fuente, etc.)</li>
+    </ul>
+
+    <h3>Preprocesamiento</h3>
+    <p>Definir y justificar técnicas como:</p>
+    <ul>
+        <li>Normalización (resize, mean/std)</li>
+        <li>Data augmentation (flip, blur, ruido, etc.)</li>
+        <li>Filtrado de imágenes de baja calidad</li>
+    </ul>
+
+    <h3>Modelo (Backbone)</h3>
+    <p>Elegir y justificar una arquitectura:</p>
+    <ul>
+        <li>CNNs (ResNet, EfficientNet, etc.)</li>
+        <li>Transformers (ViT, DeiT)</li>
+        <li>Híbridos</li>
+    </ul>
+    <p>Se evaluará:</p>
+    <ul>
+        <li>Justificación técnica y clara de la elección del modelo utilizado para desplegar la aplicación: modelo
+            pre-entrenado + fine tuning o modelos públicos disponibles pre-entrenados.</li>
+        <li>Trade-offs (performance vs costo computacional)</li>
+    </ul>
+
+    <h3>Embeddings y base vectorial</h3>
+    <p>Construir una base de embeddings con estructura similar a:</p>
+    <pre><code>id_imagen: str
+embedding: list[float]
+path: str
+etiqueta: str
+metadata: dict[str, Any] = Field(default_factory=dict)</code></pre>
+    <p>La base se utilizará para almacenar embeddings generados por los modelos y respectiva metadata generada al
+        registrar personas en el sistema.</p>
+    <p><strong>Opciones:</strong></p>
+    <ul>
+        <li>JSON (simple)</li>
+        <li>O utilizar Base de datos vectoriales: PostgreSQL + pgvector (provista por la catedra), MongoDB, o ChromaDB.
+        </li>
+    </ul>
+    <p>Se debe implementar búsqueda por similitud (cosine similarity, L2, etc.).</p>
+
+    <h3>Backend (API)</h3>
+    <p>Se deberá implementar las funciones mencionadas anteriormente para dejar un backend funcional que exponga
+        endpoints:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Endpoint</th>
+                <th>Descripción</th>
+                <th>Requisitos</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>/insert</code></td>
+                <td>Registrar nueva identidad</td>
+                <td></td>
+            </tr>
+            <tr>
+                <td><code>/predict</code></td>
+                <td>Inferencia sobre imagen</td>
+                <td></td>
+            </tr>
+            <tr>
+                <td><code>/status</code></td>
+                <td>Consultar estado asincrónico</td>
+                <td>Procesamiento asincrónico, Respuesta con HTTP 202 + UUID</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <p><strong>Formato de <code>/status</code>:</strong></p>
+    <pre><code>{
+  "status": "done | inProgress | failed",
+  "link": "url | none"
+}</code></pre>
+    <p>El link deberá permitir descargar la imagen/video una vez procesado con:</p>
+    <ul>
+        <li>Bounding boxes</li>
+        <li>Keypoints</li>
+        <li>Etiquetas</li>
+    </ul>
+
+    <h3>Interfaz de usuario</h3>
+    <p>Se utilizará el frontend provisto (Gradio).</p>
+    <ul>
+        <li><strong>Input:</strong> Imagen</li>
+        <li><strong>Output:</strong> Bounding boxes, Keypoints faciales, Nombre + score de similitud</li>
+    </ul>
+
+    <h3>Configuración</h3>
+    <p>No se permite hardcodear configuraciones. Debe utilizarse variables de entorno y archivos <code>.env</code>.</p>
+    <p><em>Ejemplos:</em> Threshold de similitud, Modelo utilizado, Paths.</p>
+
+    <h2>5. Entregables</h2>
+    <p>Los alumnos deberán entregar un repositorio propio utilizando como base el template provisto por la cátedra, con
+        todo lo mencionado en las secciones previas.</p>
+    <p>Para que el trabajo práctico se considere aprobado, el sistema debe andar sin errores corriendo los siguientes
+        comandos:</p>
+    <pre><code>docker compose build
+docker compose up</code></pre>
+    <p>Se debe entregar un enlace con el pull request que será evaluado por la cátedra sin mergear a main o el branch
+        principal.</p>
+
+    <h2>6. Buenas prácticas esperadas</h2>
+    <p>Se valorará especialmente:</p>
+    <ul>
+        <li>Código modular (separación por capas)</li>
+        <li>Manejo de errores</li>
+        <li>Logging</li>
+        <li>Tests básicos (opcional pero recomendado)</li>
+        <li>Uso de tipado (type hints)</li>
+    </ul>
+
+    <h3>Documentación</h3>
+    <p>Debe incluirse en la notebook de <code>train</code>:</p>
+    <ul>
+        <li>Explicación del pipeline</li>
+        <li>Justificación del modelo elegido</li>
+        <li>Proceso de fine-tuning</li>
+        <li>Elección de hiper parámetros</li>
+        <li>Problemas encontrados y soluciones</li>
+    </ul>
+
+    <h2>8. Evaluación</h2>
+    <p>Se evaluará:</p>
+    <ul>
+        <li>Funcionalidad (demo obligatoria)</li>
+        <li>Calidad del código</li>
+        <li>Arquitectura del sistema</li>
+        <li>Manejo de errores</li>
+        <li>Documentación</li>
+        <li>Justificación técnica</li>
+        <li>Participación (GitHub commits + PRs)</li>
+        <li>Defensa oral</li>
+    </ul>
+
+    <h2>9. Integrantes</h2>
+    <p>Máximo 2 personas.</p>
+
+    <h2>10. Fecha de entrega</h2>
+    <p>Viernes 08/05 hasta las 23:59 (vía campus).</p>
+    <ul>
+        <li>Solo se considerarán commits hasta esa hora.</li>
+        <li>Se recomienda trabajar de forma incremental (no un único commit final).</li>
+    </ul>
+
+    <h2>11. Recomendaciones finales (clave para aprender bien)</h2>
+    <ul>
+        <li>No copiar implementaciones sin entenderlas</li>
+        <li>Visualizar embeddings (PCA / t-SNE) para validar separabilidad</li>
+        <li>Testear con datos fuera del dataset</li>
+        <li>Analizar falsos positivos / falsos negativos</li>
+        <li>Medir métricas básicas (accuracy, precision, recall)</li>
+    </ul>
+
+</body>
+
+</html>

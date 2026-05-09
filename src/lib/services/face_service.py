@@ -33,6 +33,11 @@ class FaceService:
         self.model: any = self._load_model(model_path)
         self.output_path = output_path
 
+        from insightface.app import FaceAnalysis
+        self.face_analyzer = FaceAnalysis(name="buffalo_s", allowed_modules=["detection"])
+        ctx_id = 0 if torch.cuda.is_available() else -1
+        self.face_analyzer.prepare(ctx_id=ctx_id, det_size=(640, 640))
+
         os.makedirs(self.output_path, exist_ok=True)
 
     @staticmethod
@@ -77,29 +82,83 @@ class FaceService:
         # BGR uint8 (InsightFace / OpenCV convention)
         return image
 
-    def detect_faces(self, image: np.ndarray) -> list[tuple[int, int, int, int]]:
+    # ==========================================
+    # ETAPA 1: DETECCIÓN (Detección de Rostros y Keypoints)
+    # ==========================================
+    def detect_faces(self, image: np.ndarray) -> list[tuple[tuple[int, int, int, int], np.ndarray]]:
         """
-        Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
-        Return a list of tuples with the coordinates of the faces detected in the image.
+        Return a list of tuples containing the bounding box and the keypoints.
         """
-        raise NotImplementedError("Not implemented")
+        faces = self.face_analyzer.get(image)
+        result = []
+        for face in faces:
+            bbox = tuple(map(int, face.bbox))
+            result.append((bbox, face.kps))
+        return result
 
 
+    # ==========================================
+    # ETAPA 2: ALINEACIÓN (Recorte y Transformación Afín)
+    # ==========================================
     def align_face(
-        self, image: np.ndarray, box: tuple[int, int, int, int]
+        self, image: np.ndarray, box: tuple[int, int, int, int], kps: np.ndarray | None = None
     ) -> AlignedFace:
         """
         Crop using box (x1, y1, x2, y2) and run FaceAnalysis on the crop.
         Return an AlignedFace object.
         """
-        raise NotImplementedError("Not implemented")
+        from insightface.utils import face_align
+        
+        if kps is not None:
+            crop = face_align.norm_crop(image, landmark=kps, image_size=self.face_size)
+        else:
+            x1, y1, x2, y2 = self._clip_xyxy(box[0], box[1], box[2], box[3], image.shape[0], image.shape[1])
+            crop = image[y1:y2, x1:x2]
+            
+            if crop.size == 0:
+                crop = np.zeros((self.face_size, self.face_size, 3), dtype=np.uint8)
+            else:
+                crop = cv2.resize(crop, (self.face_size, self.face_size))
+            
+        return AlignedFace(image=crop, bbox=list(box), keypoints=kps)
 
+    # ==========================================
+    # ETAPA 3: EMBEDDINGS (Extracción de Características Vectoriales)
+    # ==========================================
     def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
         """
         Extract embedding from face.
         Return a list of floats representing the embedding of the face.
         """
-        raise NotImplementedError("Not implemented")
+        img_rgb = cv2.cvtColor(face.image, cv2.COLOR_BGR2RGB)
+        
+        if isinstance(self.model, torch.nn.Module):
+            from torchvision import transforms
+            transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            ])
+            tensor = transform(img_rgb).unsqueeze(0).to(next(self.model.parameters()).device)
+            
+            self.model.eval()
+            with torch.no_grad():
+                embedding = self.model(tensor)
+            
+            embedding = torch.nn.functional.normalize(embedding, p=2, dim=1)
+            return embedding.squeeze(0).tolist()
+        else:
+            # Assume ONNX
+            img_resized = cv2.resize(img_rgb, (self.face_size, self.face_size))
+            img_normalized = (img_resized.astype(np.float32) / 255.0 - [0.485, 0.456, 0.406]) / [0.229, 0.224, 0.225]
+            img_transposed = np.transpose(img_normalized, (2, 0, 1))
+            tensor_np = np.expand_dims(img_transposed, axis=0)
+            
+            input_name = self.model.get_inputs()[0].name
+            embedding = self.model.run(None, {input_name: tensor_np})[0]
+            
+            # Normalize L2
+            embedding = embedding / np.linalg.norm(embedding, axis=1, keepdims=True)
+            return embedding[0].tolist()
         
     def _cosine(self, a: np.ndarray, b: np.ndarray) -> float:
         denom = np.linalg.norm(a) * np.linalg.norm(b)
@@ -118,6 +177,9 @@ class FaceService:
             return self._l2_similarity(a, b)
         return self._cosine(a, b)
 
+    # ==========================================
+    # ETAPA 4: COMPARACIÓN (Búsqueda de Similitud e Identificación)
+    # ==========================================
     def identify(self, query_embedding: list[float]) -> tuple[str, float]:
         records = self.store.all()
         if not records:
@@ -144,10 +206,10 @@ class FaceService:
         if len(faces) != 1:
             raise ValueError("Exactly one face must be detected for identity registration.")
         
-        logger.info(f"Face detected: {faces[0]}")
+        logger.info(f"Face detected: {faces[0][0]}")
 
-        box = faces[0]
-        aligned = self.align_face(image, box)
+        box, kps = faces[0]
+        aligned = self.align_face(image, box, kps)
         embedding = self.extract_embedding_from_face(aligned)
 
         img_id = str(uuid4())
@@ -170,16 +232,14 @@ class FaceService:
         image = self._load_image(source_path)
         faces = self.detect_faces(image)
         detections: list[FaceDetection] = []
-        for (x1, y1, x2, y2) in faces:
-            aligned = self.align_face(image, (x1, y1, x2, y2))
+        for (box, kps) in faces:
+            aligned = self.align_face(image, box, kps)
             embedding = self.extract_embedding_from_face(aligned)
             label, score = self.identify(embedding)
-            kps = getattr(aligned, "keypoints", None)
-            kps_arr = np.asarray(kps) if kps is not None else None
             detections.append(
                 FaceDetection(
-                    bbox=[x1, y1, x2, y2],
-                    keypoints=self._kps_to_keypoints_dict(kps_arr),
+                    bbox=list(box),
+                    keypoints=self._kps_to_keypoints_dict(kps),
                     label=label,
                     score=round(float(score), 4),
                 )

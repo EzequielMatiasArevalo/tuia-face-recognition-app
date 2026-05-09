@@ -1,0 +1,37 @@
+{
+  "class_names": [
+    "ambrogi",
+    "gianfranco",
+    "gianluca",
+    "lucas",
+    "matias",
+    "roberto",
+    "valentino"
+  ],
+  "total_embeddings": 68,
+  "intra_class_similarity": {
+    "ambrogi": 0.8968,
+    "gianfranco": 0.9685,
+    "gianluca": 0.9392,
+    "lucas": 0.9521,
+    "matias": 0.9116,
+    "roberto": 0.9278,
+    "valentino": 0.9637
+  },
+  "valentino_nearest_neighbor": [
+    {
+      "file": "valentino_01.png",
+      "nearest_class": "gianluca",
+      "similarity": 0.9599
+    },
+    {
+      "file": "valentino_02.png",
+      "nearest_class": "gianluca",
+      "similarity": 0.9869
+    }
+  ],
+  "pca_variance_explained": [
+    0.3342,
+    0.2328
+  ]
+}

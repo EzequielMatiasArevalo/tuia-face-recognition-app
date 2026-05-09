@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Guía de Uso — Sistema de Reconocimiento Facial</title>
+<style>
+  :root {
+    --bg: #0f172a; --surface: #1e293b; --border: #334155;
+    --text: #e2e8f0; --text-muted: #94a3b8; --accent: #38bdf8;
+    --accent2: #818cf8; --green: #34d399; --red: #f87171;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg); color: var(--text);
+    line-height: 1.7; max-width: 960px; margin: 0 auto;
+    padding: 2rem 1.5rem;
+  }
+  h1 { color: var(--accent); font-size: 2rem; margin: 2rem 0 0.5rem; border-bottom: 2px solid var(--accent); padding-bottom: 0.5rem; }
+  h2 { color: var(--accent2); font-size: 1.5rem; margin: 2rem 0 0.75rem; }
+  h3 { color: var(--green); font-size: 1.2rem; margin: 1.5rem 0 0.5rem; }
+  h4 { color: var(--text); font-size: 1.05rem; margin: 1rem 0 0.5rem; }
+  p { margin: 0.5rem 0; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code { background: var(--surface); padding: 0.15em 0.4em; border-radius: 4px; font-size: 0.9em; color: var(--green); }
+  pre { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; overflow-x: auto; margin: 1rem 0; }
+  pre code { background: none; padding: 0; color: var(--text); }
+  .table-wrapper { overflow-x: auto; margin: 1rem 0; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid var(--border); padding: 0.5rem 0.75rem; text-align: left; }
+  th { background: var(--surface); color: var(--accent); font-weight: 600; }
+  tr:nth-child(even) td { background: rgba(30,41,59,0.5); }
+  blockquote { border-left: 3px solid var(--accent); padding: 0.5rem 1rem; margin: 1rem 0; background: var(--surface); border-radius: 0 8px 8px 0; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+  ul, ol { padding-left: 1.5rem; margin: 0.5rem 0; }
+  li { margin: 0.25rem 0; }
+  strong { color: var(--accent); }
+  em { color: var(--text-muted); }
+</style>
+</head>
+<body>
+<h1>Guía de Instalación y Uso — Sistema de Reconocimiento Facial</h1>
+<p>Guía paso a paso para configurar, ejecutar y operar el sistema de reconocimiento facial con Docker.</p>
+<hr>
+<h2>Requisitos Previos</h2>
+<p>Antes de empezar, asegurate de tener instalado:</p>
+<ul>
+<li><strong>Docker Desktop</strong> — <a href="https://www.docker.com/products/docker-desktop/">Descargar</a></li>
+<li><strong>Git</strong> — Para clonar el repositorio</li>
+<li>Al menos <strong>8 GB de RAM</strong> disponibles para Docker</li>
+<li><strong>NVIDIA Container Toolkit</strong> — Solo si vas a entrenar con GPU (<a href="https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html">Guía de instalación</a>)</li>
+</ul>
+<blockquote><strong>Nota:</strong> No necesitás tener Python instalado localmente. Todo corre dentro de los contenedores Docker.</blockquote>
+<hr>
+<h2>1. Clonar el Repositorio</h2>
+<pre><code class="bash">
+git clone https://github.com/MatiiP/tuia-face-recognition-app.git
+
+cd tuia-face-recognition-app
+
+</code></pre>
+<hr>
+<h2>2. Levantar los Servicios con Docker</h2>
+<p>Desde la raíz del proyecto, ejecutá:</p>
+<pre><code class="bash">
+docker compose up --build -d
+
+</code></pre>
+<p>Este comando construye las imágenes Docker e inicia <strong>4 servicios</strong>:</p>
+<div class="table-wrapper"><table>
+<tr><th>Servicio</th><th>Puerto</th><th>URL</th><th>Función</th></tr>
+<tr><td>backend</td><td>8000</td><td>http://localhost:8000</td><td>API REST (FastAPI)</td></tr>
+<tr><td>frontend</td><td>8080</td><td>http://localhost:8080</td><td>Interfaz gráfica (Gradio)</td></tr>
+<tr><td>postgres</td><td>5432</td><td>—</td><td>Base de datos vectorial (pgvector)</td></tr>
+<tr><td>jupyter</td><td>8888</td><td>http://localhost:8888</td><td>JupyterLab para experimentación</td></tr>
+</table></div>
+<h3>Verificar que todo esté corriendo</h3>
+<pre><code class="bash">
+docker compose ps
+
+</code></pre>
+<p>Deberías ver los 4 contenedores con estado <code>Up</code>.</p>
+<h3>Ver logs del backend</h3>
+<pre><code class="bash">
+docker compose logs -f backend
+
+</code></pre>
+<hr>
+<h2>3. Abrir la Interfaz Gráfica (Gradio)</h2>
+<p>Abrí tu navegador e ingresá a:</p>
+<p><strong>👉 http://localhost:8080</strong></p>
+<p>La interfaz tiene 3 pestañas:</p>
+<h3>Pestaña "Predecir"</h3>
+<ul>
+<li>Subí una imagen con uno o más rostros.</li>
+<li>Hacé clic en <strong>"Iniciar predicción"</strong>.</li>
+<li>Copiá el <code>job_id</code> que aparece.</li>
+<li>Hacé clic en <strong>"Consultar resultado de este job"</strong> (o andá a la pestaña "Estado y resultados").</li>
+<li>Se muestra la imagen con bounding boxes, keypoints y la identidad reconocida.</li>
+</ul>
+<h3>Pestaña "Registrar identidad"</h3>
+<ul>
+<li>Escribí el nombre de la persona.</li>
+<li>Subí una foto donde se vea <strong>un solo rostro</strong> claro.</li>
+<li>Hacé clic en <strong>"Registrar"</strong>.</li>
+<li>La identidad se guarda en la base de datos PostgreSQL.</li>
+</ul>
+<h3>Pestaña "Estado y resultados"</h3>
+<ul>
+<li>Pegá un <code>job_id</code> de una predicción o registro anterior.</li>
+<li>Hacé clic en <strong>"Consultar"</strong>.</li>
+<li>Podés ver el JSON de resultados, la imagen anotada y los links de descarga.</li>
+</ul>
+<hr>
+<h2>4. Poblar la Base de Datos con las Identidades</h2>
+<p>Para cargar automáticamente 2 imágenes de cada persona (excepto Valentino) en la base de datos:</p>
+<pre><code class="bash">
+docker compose run --rm --entrypoint python jupyter seed_db.py
+
+</code></pre>
+<p>Deberías ver una salida similar a:</p>
+<pre><code class="">
+Registrando ambrogi — ambrogi_01.png... ✓
+
+Registrando ambrogi — ambrogi_02.png... ✓
+
+Registrando gianfranco — gianfranco_01.png... ✓
+
+...
+
+⏭ Saltando a valentino (excluido intencionalmente)
+
+
+
+Seed finalizado: 12 identidades registradas con éxito.
+
+</code></pre>
+<h3>Verificar qué hay en la base de datos</h3>
+<pre><code class="bash">
+docker compose exec postgres psql -U faces_user -d faces -c "SELECT name FROM embeddings;"
+
+</code></pre>
+<hr>
+<h2>5. Entrenar (o Re-entrenar) el Modelo</h2>
+<h3>5.1 Preparar el Dataset</h3>
+<p>Las imágenes deben estar organizadas en la carpeta <code>Dataset/</code> con la siguiente estructura:</p>
+<pre><code class="">
+Dataset/
+
+├── ambrogi/
+
+│   ├── ambrogi_01.png
+
+│   ├── ambrogi_02.png
+
+│   └── ...
+
+├── gianfranco/
+
+├── gianluca/
+
+├── lucas/
+
+├── matias/
+
+├── roberto/
+
+└── valentino/          ← Excluido del entrenamiento automáticamente
+
+</code></pre>
+<h3>5.2 Ejecutar el Entrenamiento</h3>
+<h4>Con GPU (Recomendado) ⚡</h4>
+<pre><code class="bash">
+docker compose --profile gpu up jupyter-gpu --build
+
+</code></pre>
+<p>Luego abrí <strong>http://localhost:8888/lab</strong> y ejecutá todas las celdas de <code>train.ipynb</code>.</p>
+<blockquote><strong>Nota:</strong> La primera vez el build tarda ~15-20 min por la descarga de CUDA + PyTorch. Las siguientes veces usa cache y es casi instantáneo si no cambiaste <code>requirements.txt</code>.</blockquote>
+<h4>Con CPU</h4>
+<pre><code class="bash">
+docker compose up jupyter --build
+
+</code></pre>
+<p>Luego abrí <strong>http://localhost:8888</strong> y ejecutá <code>train.ipynb</code>.</p>
+<h3>5.3 Qué hace el notebook</h3>
+<p>El notebook ejecuta las siguientes etapas:</p>
+<ul>
+<li><strong>Pipeline de 4 etapas:</strong> Define las funciones de detección, alineación, extracción de embeddings y comparación.</li>
+<li><strong>Carga de datasets:</strong> Descarga LFW y carga el dataset local.</li>
+<li><strong>Balanceo:</strong> Aplica <strong>undersampling</strong> a LFW (cap 40 img/clase) y <strong>oversampling</strong> a clases locales (target 40 img/clase).</li>
+<li><strong>Entrenamiento:</strong> Fine-tuning de ResNet-50 durante 50 épocas con data augmentation agresiva.</li>
+<li><strong>Métricas:</strong> Genera curvas de loss/accuracy, matriz de confusión, AUC-ROC.</li>
+<li><strong>Inferencia externa:</strong> Evalúa el modelo sobre imágenes de la carpeta <code>Inferencia/</code>.</li>
+</ul>
+<h3>5.4 Parámetros configurables (en <code>train.ipynb</code>)</h3>
+<div class="table-wrapper"><table>
+<tr><th>Parámetro</th><th>Valor por defecto</th><th>Descripción</th></tr>
+<tr><td>`EPOCHS`</td><td>50</td><td>Número de épocas de entrenamiento</td></tr>
+<tr><td>`LEARNING_RATE`</td><td>1e-4</td><td>Learning rate (Adam optimizer)</td></tr>
+<tr><td>`TARGET_COUNT`</td><td>40</td><td>Target de imágenes por clase (balanceo)</td></tr>
+<tr><td>`FACE_SIZE`</td><td>112</td><td>Tamaño de rostro alineado (píxeles)</td></tr>
+<tr><td>`EMBEDDING_SIZE`</td><td>512</td><td>Dimensión del vector de embedding</td></tr>
+<tr><td>`SIMILARITY_THRESHOLD`</td><td>0.75</td><td>Umbral de similitud para inferencia</td></tr>
+</table></div>
+<h3>5.5 Después de entrenar</h3>
+<p><strong>Reiniciar el backend</strong> para que cargue el modelo nuevo:</p>
+<pre><code class="bash">
+docker compose restart backend
+
+</code></pre>
+<p><strong>Limpiar la base de datos</strong> (los embeddings viejos no son compatibles con un modelo nuevo):</p>
+<pre><code class="bash">
+docker compose exec postgres psql -U faces_user -d faces -c "DELETE FROM embeddings;"
+
+</code></pre>
+<p><strong>Re-poblar la base de datos</strong> con el modelo nuevo:</p>
+<pre><code class="bash">
+docker compose run --rm --entrypoint python jupyter seed_db.py
+
+</code></pre>
+<hr>
+<h2>6. Evaluación de Inferencia Externa</h2>
+<p>Después de entrenar, el notebook evalúa automáticamente el modelo sobre imágenes externas en <code>Inferencia/</code>:</p>
+<pre><code class="">
+Inferencia/
+
+├── ambrogi/          # Persona conocida → debe reconocerla
+
+├── gianfranco/       # Persona conocida → debe reconocerla
+
+├── gianluca/         # Persona conocida → debe reconocerla
+
+├── lucas/            # Persona conocida → debe reconocerla
+
+├── matias/           # Persona conocida → debe reconocerla
+
+├── roberto/          # Persona conocida → debe reconocerla
+
+├── valentino/        # Desconocido → debe rechazarla
+
+├── otros/            # Desconocidos → debe rechazarlas
+
+└── varias_personas/  # Múltiples caras → debe detectar e identificar todas
+
+</code></pre>
+<p>Los resultados se guardan en <code>train_metrics/inference_report.json</code> y los gráficos en <code>Graphics/</code>.</p>
+<hr>
+<h2>7. Generar Gráficos de Evaluación (PCA / t-SNE)</h2>
+<p>Después de entrenar, podés generar visualizaciones de los embeddings:</p>
+<pre><code class="bash">
+docker compose run --rm --entrypoint python jupyter evaluate.py
+
+</code></pre>
+<p>Esto genera:</p>
+<ul>
+<li><code>Graphics/pca.png</code> — Gráfico PCA de todos los embeddings (incluyendo Valentino).</li>
+<li><code>Graphics/tsne.png</code> — Gráfico t-SNE con Valentino marcado con ★.</li>
+<li><code>Graphics/evaluation_report.json</code> — Similitudes intra-clase y vecino más cercano de Valentino.</li>
+</ul>
+<hr>
+<h2>8. Consultar la Base de Datos</h2>
+<p>Abrir una consola SQL interactiva:</p>
+<pre><code class="bash">
+docker compose exec postgres psql -U faces_user -d faces
+
+</code></pre>
+<p>Consultas útiles:</p>
+<pre><code class="sql">
+-- Ver identidades registradas
+
+SELECT name FROM embeddings;
+
+
+
+-- Contar registros
+
+SELECT count(*) FROM embeddings;
+
+
+
+-- Ver estructura de la tabla
+
+\d embeddings;
+
+
+
+-- Salir
+
+\q
+
+</code></pre>
+<hr>
+<h2>9. Comandos Útiles</h2>
+<div class="table-wrapper"><table>
+<tr><th>Acción</th><th>Comando</th></tr>
+<tr><td>Levantar todo</td><td>`docker compose up --build -d`</td></tr>
+<tr><td>Levantar Jupyter con GPU</td><td>`docker compose --profile gpu up jupyter-gpu --build`</td></tr>
+<tr><td>Levantar Jupyter con CPU</td><td>`docker compose up jupyter --build`</td></tr>
+<tr><td>Apagar todo</td><td>`docker compose down`</td></tr>
+<tr><td>Reiniciar backend</td><td>`docker compose restart backend`</td></tr>
+<tr><td>Ver logs del backend</td><td>`docker compose logs -f backend`</td></tr>
+<tr><td>Evaluar modelo (PCA/t-SNE)</td><td>`docker compose run --rm --entrypoint python jupyter evaluate.py`</td></tr>
+<tr><td>Poblar base de datos</td><td>`docker compose run --rm --entrypoint python jupyter seed_db.py`</td></tr>
+<tr><td>Limpiar base de datos</td><td>`docker compose exec postgres psql -U faces_user -d faces -c "DELETE FROM embeddings;"`</td></tr>
+<tr><td>Abrir consola SQL</td><td>`docker compose exec postgres psql -U faces_user -d faces`</td></tr>
+<tr><td>Ver contenedores activos</td><td>`docker compose ps`</td></tr>
+</table></div>
+<hr>
+<h2>10. Estructura del Proyecto</h2>
+<pre><code class="">
+tuia-face-recognition-app/
+
+├── Dataset/                    # Imágenes organizadas por persona
+
+│   ├── ambrogi/
+
+│   ├── gianfranco/
+
+│   ├── gianluca/
+
+│   ├── lucas/
+
+│   ├── matias/
+
+│   ├── roberto/
+
+│   ├── valentino/              # Excluido del entrenamiento
+
+│   └── dataset.md              # Documentación del dataset
+
+├── Inferencia/                 # Imágenes externas para test de inferencia
+
+│   ├── ambrogi/                # Personas conocidas
+
+│   ├── gianfranco/
+
+│   ├── gianluca/
+
+│   ├── lucas/
+
+│   ├── matias/
+
+│   ├── roberto/
+
+│   ├── valentino/              # Persona desconocida
+
+│   ├── otros/                  # Personas completamente desconocidas
+
+│   └── varias_personas/        # Imágenes con múltiples rostros
+
+├── models/
+
+│   └── face_detection.pth      # Modelo entrenado (ResNet-50, 512-dim)
+
+├── Graphics/                   # Todos los gráficos generados
+
+├── train_metrics/              # Métricas de entrenamiento e inferencia
+
+├── src/
+
+│   ├── app/main.py             # Aplicación FastAPI
+
+│   ├── lib/
+
+│   │   ├── services/
+
+│   │   │   └── face_service.py # Pipeline: Detección → Alineación → Embeddings → Comparación
+
+│   │   └── schemas.py          # Modelos Pydantic
+
+│   └── frontend/
+
+│       └── gradio_ui.py        # Interfaz Gradio
+
+├── train.ipynb                 # Notebook de entrenamiento (Pipeline completo)
+
+├── evaluate.py                 # Script de evaluación (PCA/t-SNE)
+
+├── seed_db.py                  # Script de carga de la base de datos
+
+├── docker-compose.yml          # Definición de servicios Docker
+
+├── Dockerfile                  # Imagen del backend (CPU)
+
+├── Dockerfile.gpu              # Imagen del backend (GPU — NVIDIA CUDA)
+
+├── Dockerfile.frontend         # Imagen del frontend
+
+├── requirements.txt            # Dependencias Python
+
+├── informe.md / informe.html   # Informe final del TP
+
+└── guia_uso.md / guia_uso.html # Esta guía
+
+</code></pre>
+</body>
+</html>

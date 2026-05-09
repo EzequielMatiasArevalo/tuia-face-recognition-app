@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Informe Final — Sistema de Reconocimiento Facial</title>
+<style>
+  :root {
+    --bg: #0f172a; --surface: #1e293b; --border: #334155;
+    --text: #e2e8f0; --text-muted: #94a3b8; --accent: #38bdf8;
+    --accent2: #818cf8; --green: #34d399; --red: #f87171;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg); color: var(--text);
+    line-height: 1.7; max-width: 960px; margin: 0 auto;
+    padding: 2rem 1.5rem;
+  }
+  h1 { color: var(--accent); font-size: 2rem; margin: 2rem 0 0.5rem; border-bottom: 2px solid var(--accent); padding-bottom: 0.5rem; }
+  h2 { color: var(--accent2); font-size: 1.5rem; margin: 2rem 0 0.75rem; }
+  h3 { color: var(--green); font-size: 1.2rem; margin: 1.5rem 0 0.5rem; }
+  h4 { color: var(--text); font-size: 1.05rem; margin: 1rem 0 0.5rem; }
+  p { margin: 0.5rem 0; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code { background: var(--surface); padding: 0.15em 0.4em; border-radius: 4px; font-size: 0.9em; color: var(--green); }
+  pre { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; overflow-x: auto; margin: 1rem 0; }
+  pre code { background: none; padding: 0; color: var(--text); }
+  .table-wrapper { overflow-x: auto; margin: 1rem 0; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid var(--border); padding: 0.5rem 0.75rem; text-align: left; }
+  th { background: var(--surface); color: var(--accent); font-weight: 600; }
+  tr:nth-child(even) td { background: rgba(30,41,59,0.5); }
+  blockquote { border-left: 3px solid var(--accent); padding: 0.5rem 1rem; margin: 1rem 0; background: var(--surface); border-radius: 0 8px 8px 0; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+  ul, ol { padding-left: 1.5rem; margin: 0.5rem 0; }
+  li { margin: 0.25rem 0; }
+  strong { color: var(--accent); }
+  em { color: var(--text-muted); }
+</style>
+</head>
+<body>
+<h1>Informe Final: Sistema de Reconocimiento Facial (TP1)</h1>
+<p><strong>Materia:</strong> Computación Visual — TUIA</p>
+<p><strong>Alumnos:</strong> Gianfranco Frattini, Matias Prado</p>
+<h2>1. Arquitectura General y Flujo de Trabajo</h2>
+<p>El sistema está construido como una aplicación de microservicios desplegada en <strong>Docker</strong>, compuesta por:</p>
+<div class="table-wrapper"><table>
+<tr><th>Servicio</th><th>Tecnología</th><th>Puerto</th><th>Función</th></tr>
+<tr><td>`backend`</td><td>FastAPI + PyTorch</td><td>8000</td><td>API REST: detección, registro y predicción</td></tr>
+<tr><td>`frontend`</td><td>Gradio</td><td>8080</td><td>Interfaz gráfica de usuario</td></tr>
+<tr><td>`postgres`</td><td>PostgreSQL + pgvector</td><td>5432</td><td>Base de datos vectorial de embeddings</td></tr>
+<tr><td>`jupyter`</td><td>JupyterLab</td><td>8888</td><td>Entorno de experimentación</td></tr>
+<tr><td>`jupyter-gpu`</td><td>JupyterLab + CUDA</td><td>8888</td><td>Entrenamiento acelerado con GPU NVIDIA</td></tr>
+</table></div>
+<h3>Pipeline de Reconocimiento (face_service.py)</h3>
+<p>El pipeline sigue 4 etapas claramente separadas dentro del código:</p>
+<ul>
+<li><strong>Detección</strong> (<code>detect_faces</code>): Utiliza <strong>RetinaFace</strong> (vía InsightFace <code>buffalo_s</code>) para encontrar bounding boxes y 5 keypoints faciales (ojos, nariz, comisuras de la boca).</li>
+<li><strong>Alineación</strong> (<code>align_face</code>): Aplica una <strong>transformación afín</strong> (<code>norm_crop</code>) usando los keypoints para rotar, escalar y centrar cada rostro a un tamaño estándar de 112×112 píxeles.</li>
+<li><strong>Embeddings</strong> (<code>extract_embedding_from_face</code>): El rostro alineado pasa por un modelo convolucional (ResNet-50 fine-tuned) que produce un <strong>vector de 512 dimensiones</strong>, normalizado con L2.</li>
+<li><strong>Comparación</strong> (<code>identify</code>): Los embeddings de la consulta se comparan contra la base de datos PostgreSQL usando <strong>Similitud Coseno</strong>. Si el score supera el umbral configurado, se asigna la identidad; caso contrario, se marca como <code>unknown</code>.</li>
+</ul>
+<h2>2. Dataset</h2>
+<h3>Fuentes de datos</h3>
+<p>Se construyó un dataset combinando dos fuentes:</p>
+<div class="table-wrapper"><table>
+<tr><th>Fuente</th><th>Clases</th><th>Imágenes/persona</th><th>Descripción</th></tr>
+<tr><td>**LFW** (Labeled Faces in the Wild)</td><td>7</td><td>70–530 (original)</td><td>Personalidades públicas con ≥70 imágenes</td></tr>
+<tr><td>**Custom** (propio)</td><td>6</td><td>4–15</td><td>Imágenes de los integrantes del equipo</td></tr>
+</table></div>
+<h3>Personas del dataset</h3>
+<div class="table-wrapper"><table>
+<tr><th>Persona</th><th>Fuente</th><th>Imágenes originales</th><th>Rol</th></tr>
+<tr><td>Ambrogi</td><td>Custom</td><td>4</td><td>Prueba de clase minoritaria</td></tr>
+<tr><td>Gianfranco</td><td>Custom</td><td>15</td><td>Integrante del equipo</td></tr>
+<tr><td>Gianluca</td><td>Custom</td><td>14</td><td>Integrante (hermano de Valentino)</td></tr>
+<tr><td>Lucas</td><td>Custom</td><td>11</td><td>Integrante del equipo</td></tr>
+<tr><td>Matías</td><td>Custom</td><td>12</td><td>Integrante del equipo</td></tr>
+<tr><td>Roberto</td><td>Custom</td><td>10</td><td>Integrante del equipo</td></tr>
+<tr><td>**Valentino**</td><td>Custom</td><td>**Excluido**</td><td>**Prueba fuera de distribución (unknown)**</td></tr>
+<tr><td>7 clases LFW</td><td>LFW</td><td>70–530 c/u</td><td>Presidentes y personalidades públicas</td></tr>
+</table></div>
+<p><strong>Valentino</strong> es hermano genético de Gianluca. Al excluirlo del entrenamiento, podemos evaluar empíricamente si el modelo capta rasgos familiares compartidos o lo clasifica como desconocido.</p>
+<h3>Estrategia de Balanceo: Undersampling + Oversampling</h3>
+<p>El dataset original presentaba un fuerte desbalance: las clases LFW tenían hasta 530 imágenes, mientras que las locales apenas 4–15. Para resolverlo se implementó una <strong>estrategia de balanceo doble</strong> con un target de <strong>40 imágenes por clase</strong>:</p>
+<ul>
+<li><strong>Undersampling de LFW:</strong> Cada clase de LFW que supera las 40 imágenes en el split de train se submuestrea aleatoriamente al target. Esto evita que el modelo se sesgue hacia las caras de presidentes.</li>
+<li><strong>Oversampling de clases locales:</strong> Las clases con menos de 40 imágenes se sobremuestrean duplicando imágenes existentes. La <strong>Data Augmentation agresiva</strong> (rotación, flip, color jitter, blur, grayscale, affine) asegura que las copias no sean idénticas.</li>
+</ul>
+<p>Resultado: distribución uniforme de ~40 imágenes por clase en el conjunto de entrenamiento.</p>
+<h2>3. Entrenamiento (Fine-Tuning)</h2>
+<h3>Configuración</h3>
+<div class="table-wrapper"><table>
+<tr><th>Parámetro</th><th>Valor</th></tr>
+<tr><td>Backbone</td><td>ResNet-50 (timm, pre-trained ImageNet)</td></tr>
+<tr><td>Embedding size</td><td>512</td></tr>
+<tr><td>Épocas</td><td>50</td></tr>
+<tr><td>Batch size</td><td>32</td></tr>
+<tr><td>Learning rate</td><td>1e-4 (Adam, weight_decay=1e-4)</td></tr>
+<tr><td>Loss</td><td>CrossEntropyLoss</td></tr>
+<tr><td>Data augmentation</td><td>HorizontalFlip, Rotation(15°), Affine, ColorJitter, GaussianBlur, RandomGrayscale</td></tr>
+<tr><td>Dispositivo</td><td>GPU (NVIDIA CUDA) / CPU</td></tr>
+</table></div>
+<h3>Docker GPU</h3>
+<p>El entrenamiento se realizó utilizando Docker con soporte para GPU NVIDIA, lo que permite una aceleración significativa del proceso:</p>
+<pre><code class="bash">
+docker compose --profile gpu up jupyter-gpu --build
+
+</code></pre>
+<p>El <code>Dockerfile.gpu</code> utiliza la imagen base <code>nvidia/cuda:12.4.1-runtime-ubuntu22.04</code> con Python 3.12 y todas las dependencias del proyecto. El notebook detecta automáticamente la disponibilidad de CUDA.</p>
+<h3>Exportación del Modelo</h3>
+<p>El modelo final se exporta como <code>nn.Sequential(backbone, embedding_head)</code>, lo que permite cargarlo directamente en la API sin dependencias del script de entrenamiento. Se guarda automáticamente el mejor modelo según val accuracy en <code>models/face_detection.pth</code>.</p>
+<h2>4. Evaluación</h2>
+<h3>Métricas de Entrenamiento</h3>
+<p>El notebook genera automáticamente:</p>
+<ul>
+<li><strong>Curvas de Loss y Accuracy</strong> (train vs validation) por época</li>
+<li><strong>Matriz de Confusión</strong> sobre el conjunto de validación</li>
+<li><strong>Curva AUC-ROC multiclase</strong> (One-vs-Rest) con micro-average</li>
+</ul>
+<h3>Prueba de Valentino (Unknown)</h3>
+<p>Como test de generalización, se compara el embedding de Valentino (excluido del entrenamiento) contra Gianluca (su hermano). Esto evalúa si el modelo distingue personas genéticamente similares o produce falsos positivos.</p>
+<h3>Evaluación de Inferencia Externa</h3>
+<p>Se implementó una sección completa de evaluación sobre imágenes <strong>externas al dataset</strong> de entrenamiento, almacenadas en la carpeta <code>Inferencia/</code>:</p>
+<div class="table-wrapper"><table>
+<tr><th>Subcarpeta</th><th>Tipo</th><th>Evaluación</th></tr>
+<tr><td>`ambrogi/`, `gianfranco/`, `gianluca/`, `lucas/`, `matias/`, `roberto/`</td><td>Personas conocidas</td><td>Accuracy de reconocimiento</td></tr>
+<tr><td>`valentino/`, `otros/`</td><td>Personas desconocidas</td><td>Tasa de rechazo correcto</td></tr>
+<tr><td>`varias_personas/`</td><td>Imágenes grupales</td><td>Detección e identificación de múltiples caras</td></tr>
+</table></div>
+<p><strong>Umbral de similitud:</strong> 0.75. Si la similitud máxima contra el banco de referencia no supera este umbral, la persona se clasifica como "desconocido".</p>
+<p><strong>Métricas generadas:</strong></p>
+<ul>
+<li>Accuracy por persona conocida</li>
+<li>Tasa de rechazo para desconocidos (falsos positivos vs rechazos correctos)</li>
+<li>Distribución de similitudes (histograma conocidos vs desconocidos)</li>
+<li>Reporte completo en <code>train_metrics/inference_report.json</code></li>
+</ul>
+<h3>Evaluación Visual (PCA / t-SNE)</h3>
+<p>El script <code>evaluate.py</code> genera visualizaciones de reducción de dimensionalidad:</p>
+<ul>
+<li><strong>PCA</strong> — Proyección a 2 componentes principales</li>
+<li><strong>t-SNE</strong> — Proyección no lineal con Valentino marcado con ★</li>
+<li>Reporte JSON con similitud intra-clase y vecino más cercano de Valentino</li>
+</ul>
+<h2>5. Base de Datos (Seed)</h2>
+<p>Se pre-cargaron <strong>2 imágenes por persona</strong> (excepto Valentino) en PostgreSQL mediante el script <code>seed_db.py</code>, totalizando <strong>12 registros</strong> en la tabla <code>embeddings</code>.</p>
+<h2>6. Archivos Generados</h2>
+<div class="table-wrapper"><table>
+<tr><th>Archivo</th><th>Descripción</th></tr>
+<tr><td>`models/face_detection.pth`</td><td>Modelo PyTorch entrenado (ResNet-50, 512-dim)</td></tr>
+<tr><td>`Graphics/balanceo_antes_despues.png`</td><td>Comparación antes/después del balanceo</td></tr>
+<tr><td>`Graphics/distribucion_clases_train.png`</td><td>Distribución final de clases (train)</td></tr>
+<tr><td>`Graphics/loss_vs_epochs.png`</td><td>Curva de Loss (train + validation)</td></tr>
+<tr><td>`Graphics/accuracy_vs_epochs.png`</td><td>Curva de Accuracy (train + validation)</td></tr>
+<tr><td>`Graphics/confusion_matrix.png`</td><td>Matriz de confusión sobre validación</td></tr>
+<tr><td>`Graphics/auc_roc.png`</td><td>Curva AUC-ROC multiclase</td></tr>
+<tr><td>`Graphics/inferencia_similitudes.png`</td><td>Distribución de similitudes (inferencia)</td></tr>
+<tr><td>`Graphics/inferencia_accuracy.png`</td><td>Accuracy por persona (inferencia)</td></tr>
+<tr><td>`Graphics/pca.png`</td><td>Gráfico PCA de embeddings</td></tr>
+<tr><td>`Graphics/tsne.png`</td><td>Gráfico t-SNE de embeddings</td></tr>
+<tr><td>`train_metrics/train_metrics.log`</td><td>Registro legible del entrenamiento</td></tr>
+<tr><td>`train_metrics/train_metrics.json`</td><td>Métricas estructuradas en JSON</td></tr>
+<tr><td>`train_metrics/inference_report.json`</td><td>Reporte de evaluación de inferencia</td></tr>
+<tr><td>`Graphics/evaluation_report.json`</td><td>Similitud intra-clase + vecinos de Valentino</td></tr>
+<tr><td>`train.ipynb`</td><td>Notebook de entrenamiento (Pipeline completo)</td></tr>
+<tr><td>`evaluate.py`</td><td>Script de evaluación (PCA/t-SNE/métricas)</td></tr>
+<tr><td>`seed_db.py`</td><td>Script de carga inicial de la base de datos</td></tr>
+</table></div>
+</body>
+</html>
