@@ -82,7 +82,32 @@ class FaceService:
         Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
         Return a list of tuples with the coordinates of the faces detected in the image.
         """
-        raise NotImplementedError("Not implemented")
+        from facenet_pytorch import MTCNN
+        from PIL import Image
+        
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        mtcnn = MTCNN(
+            image_size=self.face_size,
+            margin=20,
+            device=device,
+            keep_all=True
+        )
+        
+        # Convert BGR (OpenCV) to RGB (PIL/facenet-pytorch)
+        img_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        img_pil = Image.fromarray(img_rgb)
+        
+        boxes, _, _ = mtcnn.detect(img_pil, landmarks=True)
+        
+        result_boxes = []
+        if boxes is not None:
+            h, w = image.shape[:2]
+            for box in boxes:
+                x1, y1, x2, y2 = [int(b) for b in box]
+                x1, y1, x2, y2 = self._clip_xyxy(x1, y1, x2, y2, h, w)
+                result_boxes.append((x1, y1, x2, y2))
+                
+        return result_boxes
 
 
     def align_face(
@@ -92,14 +117,92 @@ class FaceService:
         Crop using box (x1, y1, x2, y2) and run FaceAnalysis on the crop.
         Return an AlignedFace object.
         """
-        raise NotImplementedError("Not implemented")
+        from facenet_pytorch import MTCNN
+        from PIL import Image
+        
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        mtcnn = MTCNN(
+            image_size=self.face_size,
+            margin=20,
+            device=device,
+            keep_all=True
+        )
+        
+        img_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        img_pil = Image.fromarray(img_rgb)
+        
+        boxes, probs, landmarks = mtcnn.detect(img_pil, landmarks=True)
+        
+        best_idx = -1
+        best_iou = 0.0
+        
+        if boxes is not None:
+            for i, b in enumerate(boxes):
+                # Calcula la intersection of union
+                xA = max(box[0], int(b[0]))
+                yA = max(box[1], int(b[1]))
+                xB = min(box[2], int(b[2]))
+                yB = min(box[3], int(b[3]))
+                interArea = max(0, xB - xA + 1) * max(0, yB - yA + 1)
+                boxAArea = (box[2] - box[0] + 1) * (box[3] - box[1] + 1)
+                boxBArea = (int(b[2]) - int(b[0]) + 1) * (int(b[3]) - int(b[1]) + 1)
+                iou = interArea / float(boxAArea + boxBArea - interArea)
+                
+                if iou > best_iou:
+                    best_iou = iou
+                    best_idx = i
+                    
+        kps = None
+        if best_idx != -1:
+            kps = landmarks[best_idx].copy()
+            # The frontend expects keypoints relative to the crop (x1, y1)
+            x1, y1, x2, y2 = box
+            kps[:, 0] -= x1
+            kps[:, 1] -= y1
+        
+        x1, y1, x2, y2 = box
+        crop_bgr = image[y1:y2, x1:x2]
+        crop_resized = cv2.resize(crop_bgr, (self.face_size, self.face_size))
+
+        return AlignedFace(
+            bbox=list(box),
+            keypoints=kps,
+            image=crop_resized,
+            embedding=None
+        )
 
     def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
         """
         Extract embedding from face.
         Return a list of floats representing the embedding of the face.
         """
-        raise NotImplementedError("Not implemented")
+        from PIL import Image
+        import torchvision.transforms as transforms
+        from facenet_pytorch import InceptionResnetV1
+        
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
+        # Load the model state_dict that was returned by _load_model
+        # self.model contains the state_dict loaded from the .pth file
+        resnet = InceptionResnetV1(pretrained=None, classify=False).to(device)
+        resnet.load_state_dict(self.model, strict=False)
+        resnet.eval()
+        
+        img_rgb = cv2.cvtColor(face.image, cv2.COLOR_BGR2RGB)
+        img_pil = Image.fromarray(img_rgb)
+        
+        transform = transforms.Compose([
+            transforms.Resize((self.face_size, self.face_size)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        ])
+        
+        face_tensor = transform(img_pil).unsqueeze(0).to(device)
+        
+        with torch.no_grad():
+            emb = resnet(face_tensor)
+            
+        return emb.cpu().numpy().flatten().tolist()
         
     def _cosine(self, a: np.ndarray, b: np.ndarray) -> float:
         denom = np.linalg.norm(a) * np.linalg.norm(b)

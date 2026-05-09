@@ -11,3 +11,6 @@ model/*
 *.onnx
 data/*
 .DS_Store
+dependencias_train.txt
+consignas.txtpython -m venv venv
+consignas.txt
