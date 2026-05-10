@@ -83,8 +83,8 @@ threadpoolctl==3.6.0
 tifffile==2026.4.11
 timm==1.0.26
 tomlkit==0.14.0
-torch==2.11.0
-torchvision==0.26.0
+#torch==2.11.0
+#torchvision==0.26.0
 tqdm==4.67.3
 typer==0.24.1
 typing-extensions==4.15.0
@@ -95,3 +95,11 @@ uvloop==0.22.1
 watchfiles==1.1.1
 wcwidth==0.6.0
 websockets==16.0
+
+# --- Usamos EXTRA index para que busque en ambos lados ---
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# IA y Visión (CPU versions)
+torch==2.11.0
+torchvision==0.26.0
+facenet-pytorch
