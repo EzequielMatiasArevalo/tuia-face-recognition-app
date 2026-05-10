@@ -6,6 +6,7 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 COPY requirements.txt /app/requirements.txt
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && pip install --no-cache-dir --upgrade pip && \
@@ -13,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get purge -y build-essential \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
+
 
 COPY ./src /app
 COPY ./.env.docker.example /app/.env
