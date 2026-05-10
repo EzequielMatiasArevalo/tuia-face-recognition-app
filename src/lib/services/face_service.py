@@ -7,9 +7,11 @@ from uuid import uuid4
 import cv2
 import numpy as np
 import torch
+from facenet_pytorch import MTCNN
 import onnxruntime
 from lib.schemas import EmbeddingRecord, FaceDetection, PredictResult, AlignedFace
 from lib.storage.base import EmbeddingStoreProtocol
+from PIL import Image
 import os 
 import logging
 
@@ -32,7 +34,16 @@ class FaceService:
         self.face_size = face_size
         self.model: any = self._load_model(model_path)
         self.output_path = output_path
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")###
 
+        # Inicializamos el detector
+        self.detector = MTCNN(
+            image_size=face_size,
+            margin=20,
+            keep_all=False,
+            thresholds=[0.5, 0.6, 0.6],
+            device=self.device)
+        
         os.makedirs(self.output_path, exist_ok=True)
 
     @staticmethod
@@ -51,20 +62,20 @@ class FaceService:
 
     @staticmethod
     def _kps_to_keypoints_dict(kps: np.ndarray | None) -> dict[str, list[int]]:
-        if kps is None or len(kps) == 0:
-            return {}
-        return {
-            f"k{i}": [int(round(float(kps[i, 0]))), int(round(float(kps[i, 1])))]
-            for i in range(len(kps))
-        }
-
-
+            if kps is None or len(kps) == 0:
+                return {}
+            return {
+                f"k{i}": [int(round(float(kps[i, 0]))), int(round(float(kps[i, 1])))]
+                for i in range(len(kps))
+            }
+    
     def _load_model(self, model_path: Path) -> any:
         mp = Path(model_path)
         if not mp.exists():
             raise ValueError(f"Model path does not exist: {model_path}")
         suf = mp.suffix.lower()
         if suf == ".pth":
+            
             return torch.load(mp, map_location="cpu", weights_only=False)
         if suf == ".onnx":
             return onnxruntime.InferenceSession(str(mp))
@@ -82,24 +93,62 @@ class FaceService:
         Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
         Return a list of tuples with the coordinates of the faces detected in the image.
         """
-        raise NotImplementedError("Not implemented")
+        # Convertimos de BGR (OpenCV) a RGB (PIL/FaceNet)
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        pil_img = Image.fromarray(image_rgb)
+
+        # Si la imagen es gigante, la achicamos internamente para detectar rápido
+        max_dim = 800
+        if max(pil_img.size) > max_dim:
+            pil_img.thumbnail((max_dim, max_dim))
+
+        # Detectar cajas
+        boxes, _, landmarks = self.detector.detect(pil_img, landmarks=True)
+
+        if boxes is None:
+            return []
+
+        # Convertimos a enteros y a la tupla requerida
+        return [tuple(box.astype(int)) for box in boxes] #list(zip(boxes, landmarks)) #
 
 
-    def align_face(
-        self, image: np.ndarray, box: tuple[int, int, int, int]
-    ) -> AlignedFace:
+    def align_face(self, image: np.ndarray, bbox: tuple[int, int, int, int]) -> AlignedFace:
         """
         Crop using box (x1, y1, x2, y2) and run FaceAnalysis on the crop.
         Return an AlignedFace object.
         """
-        raise NotImplementedError("Not implemented")
-
+        x1, y1, x2, y2 = [max(0, int(v)) for v in bbox]
+        # Recorte (crop)
+        face_img = image[y1:y2, x1:x2]
+        
+        # Redimensionar al tamaño que espera InceptionResnetV1 (160x160)
+        aligned_img = cv2.resize(face_img, (self.face_size, self.face_size))
+        
+        # Devolver el objeto  AlignedFace
+        return AlignedFace(image=aligned_img, keypoints=None, bbox=[x1, y1, x2, y2])
+    
     def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
         """
         Extract embedding from face.
         Return a list of floats representing the embedding of the face.
         """
-        raise NotImplementedError("Not implemented")
+        # Convertir el NumPy de OpenCV a Tensor de PyTorch
+        img_np = face.image
+        face_tensor = torch.from_numpy(img_np).permute(2, 0, 1).to(self.device)
+        
+        # Normalización (ImageNet)
+        face_prep = face_tensor.to(torch.float32) / 255.0
+        mean = torch.tensor([0.485, 0.456, 0.406]).to(self.device).view(3, 1, 1)
+        std = torch.tensor([0.229, 0.224, 0.225]).to(self.device).view(3, 1, 1)
+        face_prep = (face_prep - mean) / std
+
+        # Inferencia
+        with torch.no_grad():
+            embedding = self.model(face_prep.unsqueeze(0))
+        
+        # Devolver como lista de floats
+        return embedding.cpu().squeeze().tolist()
+
         
     def _cosine(self, a: np.ndarray, b: np.ndarray) -> float:
         denom = np.linalg.norm(a) * np.linalg.norm(b)
