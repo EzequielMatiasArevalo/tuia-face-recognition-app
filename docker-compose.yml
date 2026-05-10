@@ -6,7 +6,7 @@ services:
       dockerfile: Dockerfile
     container_name: backend
     ports:
-      - "8000:8000"
+      - "8000:8000" ##
     volumes:
       - ./.env.docker.example:/app/.env
       - ./src:/app
@@ -49,9 +49,11 @@ services:
     environment:
       BACKEND_URL: http://backend:8000
     ports:
-      - "8080:8080"
+      - "8080:8080" #8080:8080 me tiraba error en ipv4
     depends_on:
       - backend
+    # Agregamos esta línea para forzar a la app a escuchar fuera del contenedor
+    command: ["uvicorn", "frontend.app:app", "--host", "0.0.0.0", "--port", "8080"]
 
 volumes:
   pgdata:
