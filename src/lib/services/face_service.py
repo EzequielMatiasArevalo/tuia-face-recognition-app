@@ -120,45 +120,52 @@ class FaceService:
         Crop using box (x1, y1, x2, y2) and run FaceAnalysis on the crop.
         Return an AlignedFace object.
         """
-        x1, y1, x2, y2 = box
+        try: 
+            x1, y1, x2, y2 = [int(round(float(c))) for c in box]
         
-        face_crop = image[y1:y2, x1:x2]
-
-        if face_crop.size == 0: # Caso de error en coordenadas
-            return None
-        
-        face_aligned = cv2.resize(face_crop, (self.face_size, self.face_size), interpolation=cv2.INTER_AREA)
-        
-        return AlignedFace(
-            image=face_aligned,
-            bbox=list(box),
-            embedding=[], 
-            keypoints=self._kps_to_keypoints_dict # Opcional: podrías extraerlos con self.detector.detect(image)
-            )
-   
-
-    def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
-        """
-        Extract embedding from face.
-        Return a list of floats representing the embedding of the face.
-        """
-        face_rgb = cv2.cvtColor(face.image, cv2.COLOR_BGR2RGB)
-        
-        face_tensor = torch.tensor(face_rgb).permute(2, 0, 1).float()
-        
-        face_tensor = (face_tensor - 127.5) / 128.0
-        face_tensor = face_tensor.unsqueeze(0).to(self.device)
-
-        with torch.no_grad():
-            embedding = self.model(face_tensor)
             
-        embedding_np = embedding.cpu().numpy().flatten()
+            x1, y1 = max(0, x1), max(0, y1)
+            x2, y2 = min(image.shape[1], x2), min(image.shape[0], y2)
         
-        norm = np.linalg.norm(embedding_np)
-        if norm > 0:
-            embedding_np = embedding_np / norm
+            face_crop = image[y1:y2, x1:x2]
 
-        return embedding_np.tolist()
+            if face_crop.size == 0:
+                return None
+            
+            face_aligned = cv2.resize(face_crop, (self.face_size, self.face_size), interpolation=cv2.INTER_AREA)
+            
+            return AlignedFace(
+                image=face_aligned,
+                bbox=list(box),
+                embedding=[], 
+                keypoints=self._kps_to_keypoints_dict # Opcional: podrías extraerlos con self.detector.detect(image)
+                )
+        except Exception as e:
+        print(f"Error específico en alineación: {e}")
+        return None
+
+        def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
+            """
+            Extract embedding from face.
+            Return a list of floats representing the embedding of the face.
+            """
+            face_rgb = cv2.cvtColor(face.image, cv2.COLOR_BGR2RGB)
+            
+            face_tensor = torch.tensor(face_rgb).permute(2, 0, 1).float()
+            
+            face_tensor = (face_tensor - 127.5) / 128.0
+            face_tensor = face_tensor.unsqueeze(0).to(self.device)
+
+            with torch.no_grad():
+                embedding = self.model(face_tensor)
+                
+            embedding_np = embedding.cpu().numpy().flatten()
+            
+            norm = np.linalg.norm(embedding_np)
+            if norm > 0:
+                embedding_np = embedding_np / norm
+
+            return embedding_np.tolist()
 
         
     def _cosine(self, a: np.ndarray, b: np.ndarray) -> float:
