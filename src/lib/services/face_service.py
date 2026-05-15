@@ -88,15 +88,9 @@ class FaceService:
         image = cv2.imread(source_path)
         if image is None:
             raise ValueError(f"Could not read image: {source_path}")
-        # BGR uint8 (InsightFace / OpenCV convention)
         return image
 
     def detect_faces(self, image: np.ndarray) -> list[tuple[int, int, int, int]]:
-        """
-        Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
-        Return a list of tuples with the coordinates of the faces detected in the image.
-        """
-
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         boxes, _ = self.detector.detect(image_rgb)
         
@@ -106,7 +100,6 @@ class FaceService:
         formatted_boxes = []
         h, w, _ = image.shape
         for box in boxes:
-        
             x1, y1, x2, y2 = self._clip_xyxy(
                 int(box[0]), int(box[1]), int(box[2]), int(box[3]), h, w
             )
@@ -114,60 +107,49 @@ class FaceService:
             
         return formatted_boxes
 
-
-    def align_face(self, image: np.ndarray, box: tuple[int, int, int, int]) -> AlignedFace:
-        """
-        Crop using box (x1, y1, x2, y2) and run FaceAnalysis on the crop.
-        Return an AlignedFace object.
-        """
+    def align_face(self, image: np.ndarray, box) -> AlignedFace:
         try: 
             x1, y1, x2, y2 = [int(round(float(c))) for c in box]
-        
             
             x1, y1 = max(0, x1), max(0, y1)
             x2, y2 = min(image.shape[1], x2), min(image.shape[0], y2)
-        
+            
             face_crop = image[y1:y2, x1:x2]
+            face_crop_rgb = cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB)
 
-            if face_crop.size == 0:
+            if face_crop_rgb.size == 0:
                 return None
             
-            face_aligned = cv2.resize(face_crop, (self.face_size, self.face_size), interpolation=cv2.INTER_AREA)
+            face_aligned = cv2.resize(face_crop_rgb, (self.face_size, self.face_size), interpolation=cv2.INTER_AREA)
             
-            return AlignedFace(
-                image=face_aligned,
+            return AlignedFace(image=face_aligned,
                 bbox=list(box),
                 embedding=[], 
-                keypoints=self._kps_to_keypoints_dict # Opcional: podrías extraerlos con self.detector.detect(image)
-                )
+                keypoints=self._kps_to_keypoints_dict)
         except Exception as e:
             print(f"Error específico en alineación: {e}")
             
         return None
 
-        def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
-            """
-            Extract embedding from face.
-            Return a list of floats representing the embedding of the face.
-            """
-            face_rgb = cv2.cvtColor(face.image, cv2.COLOR_BGR2RGB)
-            
-            face_tensor = torch.tensor(face_rgb).permute(2, 0, 1).float()
-            
-            face_tensor = (face_tensor - 127.5) / 128.0
-            face_tensor = face_tensor.unsqueeze(0).to(self.device)
+    def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
+        """
+        Extract embedding from face.
+        """
+        face_tensor = torch.tensor(face.image).permute(2, 0, 1).float()
+        
+        face_tensor = (face_tensor - 127.5) / 128.0
+        face_tensor = face_tensor.unsqueeze(0).to(self.device)
 
-            with torch.no_grad():
-                embedding = self.model(face_tensor)
-                
-            embedding_np = embedding.cpu().numpy().flatten()
+        with torch.no_grad():
+            embedding = self.model(face_tensor)
             
-            norm = np.linalg.norm(embedding_np)
-            if norm > 0:
-                embedding_np = embedding_np / norm
+        embedding_np = embedding.cpu().numpy().flatten()
+        
+        norm = np.linalg.norm(embedding_np)
+        if norm > 0:
+            embedding_np = embedding_np / norm
 
-            return embedding_np.tolist()
-
+        return embedding_np.tolist()
         
     def _cosine(self, a: np.ndarray, b: np.ndarray) -> float:
         denom = np.linalg.norm(a) * np.linalg.norm(b)
