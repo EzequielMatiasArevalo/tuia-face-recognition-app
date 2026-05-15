@@ -141,7 +141,8 @@ class FaceService:
                 keypoints=self._kps_to_keypoints_dict # Opcional: podrías extraerlos con self.detector.detect(image)
                 )
         except Exception as e:
-        print(f"Error específico en alineación: {e}")
+            print(f"Error específico en alineación: {e}")
+            
         return None
 
         def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
