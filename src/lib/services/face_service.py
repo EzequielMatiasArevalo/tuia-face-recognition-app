@@ -65,7 +65,7 @@ class FaceService:
 
     @staticmethod
     def _kps_to_keypoints_dict(kps: np.ndarray | None) -> dict[str, list[int]]:
-        if kps is None or len(kps) == 0:
+        if kps is None or getattr(kps, 'ndim', 1) == 0 or len(kps) == 0:
             return {}
         return {
             f"k{i}": [int(round(float(kps[i, 0]))), int(round(float(kps[i, 1])))]
