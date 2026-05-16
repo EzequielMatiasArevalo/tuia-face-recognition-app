@@ -4,6 +4,11 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from PIL import Image
+
+import cv2
+import numpy as np
+from insightface.app import FaceAnalysis
 
 class EmbeddingRecord(BaseModel):
     id_imagen: str
@@ -28,6 +33,8 @@ class AlignedFace(BaseModel):
     keypoints: Any
     image: Any
     embedding: Optional[list[float]] = None
+
+
 
 
 class PredictRequest(BaseModel):

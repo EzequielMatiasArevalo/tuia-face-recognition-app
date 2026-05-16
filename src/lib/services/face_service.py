@@ -12,6 +12,7 @@ from lib.schemas import EmbeddingRecord, FaceDetection, PredictResult, AlignedFa
 from lib.storage.base import EmbeddingStoreProtocol
 import os 
 import logging
+from facenet_pytorch import MTCNN
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +30,21 @@ class FaceService:
         self.store = store
         self.similarity_metric = similarity_metric
         self.similarity_threshold = similarity_threshold
-        self.face_size = face_size
-        self.model: any = self._load_model(model_path)
+        self.face_size = face_size #CONVIENE 160 X 160 EN TEORIA
+        #self.model: any = self._load_model(model_path)
+        self.output_path = output_path
+
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.detector = MTCNN(
+            image_size=face_size, 
+            margin=20, 
+            keep_all=True, 
+            device=self.device,
+            post_process=False)
+        
+        self.model = self._load_model(model_path)
+        self.model.to(self.device)
+        self.model.eval()
         self.output_path = output_path
 
         os.makedirs(self.output_path, exist_ok=True)
@@ -51,7 +65,7 @@ class FaceService:
 
     @staticmethod
     def _kps_to_keypoints_dict(kps: np.ndarray | None) -> dict[str, list[int]]:
-        if kps is None or len(kps) == 0:
+        if kps is None or getattr(kps, 'ndim', 1) == 0 or len(kps) == 0:
             return {}
         return {
             f"k{i}": [int(round(float(kps[i, 0]))), int(round(float(kps[i, 1])))]
@@ -74,32 +88,68 @@ class FaceService:
         image = cv2.imread(source_path)
         if image is None:
             raise ValueError(f"Could not read image: {source_path}")
-        # BGR uint8 (InsightFace / OpenCV convention)
         return image
 
     def detect_faces(self, image: np.ndarray) -> list[tuple[int, int, int, int]]:
-        """
-        Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
-        Return a list of tuples with the coordinates of the faces detected in the image.
-        """
-        raise NotImplementedError("Not implemented")
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        boxes, _ = self.detector.detect(image_rgb)
+        
+        if boxes is None:
+            return []
+        
+        formatted_boxes = []
+        h, w, _ = image.shape
+        for box in boxes:
+            x1, y1, x2, y2 = self._clip_xyxy(
+                int(box[0]), int(box[1]), int(box[2]), int(box[3]), h, w
+            )
+            formatted_boxes.append((x1, y1, x2, y2))
+            
+        return formatted_boxes
 
+    def align_face(self, image: np.ndarray, box) -> AlignedFace:
+        try: 
+            x1, y1, x2, y2 = [int(round(float(c))) for c in box]
+            
+            x1, y1 = max(0, x1), max(0, y1)
+            x2, y2 = min(image.shape[1], x2), min(image.shape[0], y2)
+            
+            face_crop = image[y1:y2, x1:x2]
+            face_crop_rgb = cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB)
 
-    def align_face(
-        self, image: np.ndarray, box: tuple[int, int, int, int]
-    ) -> AlignedFace:
-        """
-        Crop using box (x1, y1, x2, y2) and run FaceAnalysis on the crop.
-        Return an AlignedFace object.
-        """
-        raise NotImplementedError("Not implemented")
+            if face_crop_rgb.size == 0:
+                return None
+            
+            face_aligned = cv2.resize(face_crop_rgb, (self.face_size, self.face_size), interpolation=cv2.INTER_AREA)
+            
+            return AlignedFace(image=face_aligned,
+                bbox=list(box),
+                embedding=[], 
+                keypoints=self._kps_to_keypoints_dict)
+        except Exception as e:
+            print(f"Error específico en alineación: {e}")
+            
+        return None
 
     def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
         """
         Extract embedding from face.
-        Return a list of floats representing the embedding of the face.
         """
-        raise NotImplementedError("Not implemented")
+        face_tensor = torch.tensor(face.image).permute(2, 0, 1).float()
+        
+        face_tensor = (face_tensor - 127.5) / 128.0
+        face_tensor = face_tensor.unsqueeze(0).to(self.device)
+
+        with torch.no_grad():
+            embedding = self.model(face_tensor)
+            
+        embedding_np = embedding.cpu().numpy().flatten()
+        
+        norm = np.linalg.norm(embedding_np)
+        if norm > 0:
+            embedding_np = embedding_np / norm
+
+        return embedding_np.tolist()
         
     def _cosine(self, a: np.ndarray, b: np.ndarray) -> float:
         denom = np.linalg.norm(a) * np.linalg.norm(b)

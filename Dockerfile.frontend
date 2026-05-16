@@ -17,7 +17,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 COPY src/frontend /app/frontend
 
-ENV BACKEND_URL=http://backend:8000
+ENV BACKEND_URL = "http://localhost:8000"
 
 EXPOSE 8080
 
