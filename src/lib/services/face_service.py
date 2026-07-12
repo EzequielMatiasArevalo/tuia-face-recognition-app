@@ -6,11 +6,10 @@ from uuid import uuid4
 
 import cv2
 import numpy as np
-import torch
-import onnxruntime
+from insightface.app import FaceAnalysis
 from lib.schemas import EmbeddingRecord, FaceDetection, PredictResult, AlignedFace
 from lib.storage.base import EmbeddingStoreProtocol
-import os 
+import os
 import logging
 
 logger = logging.getLogger(__name__)
@@ -23,15 +22,17 @@ class FaceService:
         similarity_metric: str,
         similarity_threshold: float,
         face_size: int,
-        model_path: Path,
+        model_path: Path | None = None,
         output_path: Path = Path("output"),
     ) -> None:
         self.store = store
         self.similarity_metric = similarity_metric
         self.similarity_threshold = similarity_threshold
         self.face_size = face_size
-        self.model: any = self._load_model(model_path)
+        #self.model: any = self._load_model(model_path)
         self.output_path = output_path
+        self.app = FaceAnalysis(name="buffalo_l", providers=["CPUExecutionProvider"])
+        self.app.prepare(ctx_id=0, det_size=(face_size, face_size))
 
         os.makedirs(self.output_path, exist_ok=True)
 
@@ -82,35 +83,16 @@ class FaceService:
         Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
         Return a list of tuples with the coordinates of the faces detected in the image.
         """
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-        face_cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-        )
-
-        faces = face_cascade.detectMultiScale(
-            gray,
-            scaleFactor=1.05,
-            minNeighbors=6,
-            minSize=(80, 80),
-        )
-
-        result = []
+        faces = self.app.get(image) 
         h, w = image.shape[:2]
-        min_area = max(80 * 80, int(h * w * 0.01))
-
-        for (x, y, fw, fh) in faces:
-            area = fw * fh
-            if area < min_area:
-                continue
-
-            x1, y1 = int(x), int(y)
-            x2, y2 = int(x + fw), int(y + fh)
+        result = []
+        for face in faces:
+            x1, y1, x2, y2 = face.bbox.astype(int)
+            x1, y1, x2, y2 = self._clip_xyxy(x1, y1, x2, y2, h, w)
             result.append((x1, y1, x2, y2))
 
-        result.sort(key=lambda box: (box[2] - box[0]) * (box[3] - box[1]), reverse=True)
+        result.sort(key=lambda b: (b[2] - b[0]) * (b[3] - b[1]), reverse=True)
         return result
-
 
     def align_face(
         self, image: np.ndarray, box: tuple[int, int, int, int]
