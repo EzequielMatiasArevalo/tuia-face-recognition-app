@@ -13,3 +13,4 @@ data/*
 .DS_Store
 src/data/dataset_tp1/
 src/data/dataset_lfw/
+src/data/dataset_tp1_test/
