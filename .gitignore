@@ -10,5 +10,6 @@ model/*
 *.pth
 *.onnx
 data/*
-.DS_Storesrc/data/dataset_tp1/
-.DS_Storesrc/data/dataset_lfw/
+.DS_Store
+src/data/dataset_tp1/
+src/data/dataset_lfw/
