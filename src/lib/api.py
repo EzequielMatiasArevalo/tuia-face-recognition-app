@@ -50,13 +50,11 @@ def _resolved_model_path() -> Path:
         return base / name
     return base
 
-
 face_service = FaceService(
     store=embedding_store,
     similarity_metric=settings.similarity_metric,
     similarity_threshold=settings.similarity_threshold,
     face_size=settings.face_size,
-    model_path=_resolved_model_path(),
 )
 
 

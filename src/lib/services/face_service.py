@@ -59,7 +59,7 @@ class FaceService:
             for i in range(len(kps))
         }
 
-
+    '''
     def _load_model(self, model_path: Path) -> any:
         mp = Path(model_path)
         if not mp.exists():
@@ -70,6 +70,7 @@ class FaceService:
         if suf == ".onnx":
             return onnxruntime.InferenceSession(str(mp))
         raise ValueError(f"Unsupported model format (expected .pth or .onnx): {model_path}")
+    '''
 
     def _load_image(self, source_path: str) -> np.ndarray:
         image = cv2.imread(source_path)
@@ -101,18 +102,34 @@ class FaceService:
         Crop using box (x1, y1, x2, y2) and run FaceAnalysis on the crop.
         Return an AlignedFace object.
         """
-        x1, y1, x2, y2 = box
+        faces = self.app.get(image)
         h, w = image.shape[:2]
-        x1, y1, x2, y2 = self._clip_xyxy(x1, y1, x2, y2, h, w)
+        x1, y1, x2, y2 = box
 
-        face_img = image[y1:y2, x1:x2]
-        face_img = cv2.resize(face_img, (self.face_size, self.face_size))
+        matched = None
+        for face in faces:
+            fx1, fy1, fx2, fy2 = face.bbox.astype(int)
+            fx1, fy1, fx2, fy2 = self._clip_xyxy(fx1, fy1, fx2, fy2, h, w)
+            if (fx1, fy1, fx2, fy2) == (x1, y1, x2, y2):
+                matched = face
+                break
+
+        if matched is None:
+            crop = cv2.resize(image[y1:y2, x1:x2], (self.face_size, self.face_size))
+            return AlignedFace(
+                bbox=np.array([x1, y1, x2, y2]),
+                keypoints=np.empty((0, 2), dtype=np.int32),
+                image=crop,
+                embedding=None,
+            )
+
+        kps = matched.kps.astype(np.int32) if matched.kps is not None else np.empty((0, 2), dtype=np.int32)
 
         return AlignedFace(
             bbox=np.array([x1, y1, x2, y2]),
-            keypoints=np.empty((0, 2), dtype=np.int32),
-            image=face_img,
-            embedding=None,
+            keypoints=kps,
+            image=image[y1:y2, x1:x2],
+            embedding=matched.normed_embedding,  # ya viene calculado y L2-normalizado
         )
 
     def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
@@ -120,35 +137,9 @@ class FaceService:
         Extract embedding from face.
         Return a list of floats representing the embedding of the face.
         """
-        face_image = face.image
-        rgb = cv2.cvtColor(face_image, cv2.COLOR_BGR2RGB)
-
-        tensor = torch.from_numpy(rgb).permute(2, 0, 1).float() / 255.0
-        tensor = tensor.unsqueeze(0)
-
-        device = next(self.model.parameters()).device
-        tensor = tensor.to(device)
-
-        self.model.eval()
-        with torch.no_grad():
-            x = self.model.conv1(tensor)
-            x = self.model.bn1(x)
-            x = self.model.relu(x)
-            x = self.model.maxpool(x)
-
-            x = self.model.layer1(x)
-            x = self.model.layer2(x)
-            x = self.model.layer3(x)
-            x = self.model.layer4(x)
-            x = self.model.avgpool(x)
-            x = torch.flatten(x, 1)
-
-        embedding = x.squeeze(0).cpu().numpy().astype(np.float32)
-        norm = np.linalg.norm(embedding)
-        if norm > 0:
-            embedding = embedding / norm
-
-        return embedding.tolist()
+        if face.embedding is None:
+            raise ValueError("No embedding available for this face; align_face debe ejecutarse primero.")
+        return np.asarray(face.embedding, dtype=np.float32).tolist()
         
     def _cosine(self, a: np.ndarray, b: np.ndarray) -> float:
         denom = np.linalg.norm(a) * np.linalg.norm(b)
