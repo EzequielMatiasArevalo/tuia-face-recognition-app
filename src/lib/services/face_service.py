@@ -32,7 +32,7 @@ class FaceService:
         #self.model: any = self._load_model(model_path)
         self.output_path = output_path
         self.app = FaceAnalysis(name="buffalo_l", providers=["CPUExecutionProvider"])
-        self.app.prepare(ctx_id=0, det_size=(face_size, face_size))
+        self.app.prepare(ctx_id=0, det_size=(640, 640))
 
         os.makedirs(self.output_path, exist_ok=True)
 
@@ -76,8 +76,20 @@ class FaceService:
         image = cv2.imread(source_path)
         if image is None:
             raise ValueError(f"Could not read image: {source_path}")
-        # BGR uint8 (InsightFace / OpenCV convention)
-        return image
+
+        if image.ndim != 3 or image.shape[2] != 3:
+            raise ValueError(f"Expected a 3-channel image: {source_path}")
+
+        if image.dtype != np.uint8:
+            image = image.astype(np.uint8)
+
+        height, width = image.shape[:2]
+        if min(height, width) < 16:
+            raise ValueError(f"Image is too small for face detection: {source_path}")
+
+        # Keep the original resolution so InsightFace can process the image correctly.
+        # The face crop is resized later for embedding extraction.
+        return np.ascontiguousarray(image)
 
     def detect_faces(self, image: np.ndarray) -> list[tuple[int, int, int, int]]:
         """
