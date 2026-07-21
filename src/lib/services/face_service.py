@@ -71,25 +71,13 @@ class FaceService:
             return onnxruntime.InferenceSession(str(mp))
         raise ValueError(f"Unsupported model format (expected .pth or .onnx): {model_path}")
     '''
-
+    
     def _load_image(self, source_path: str) -> np.ndarray:
         image = cv2.imread(source_path)
         if image is None:
             raise ValueError(f"Could not read image: {source_path}")
-
-        if image.ndim != 3 or image.shape[2] != 3:
-            raise ValueError(f"Expected a 3-channel image: {source_path}")
-
-        if image.dtype != np.uint8:
-            image = image.astype(np.uint8)
-
-        height, width = image.shape[:2]
-        if min(height, width) < 16:
-            raise ValueError(f"Image is too small for face detection: {source_path}")
-
-        # Keep the original resolution so InsightFace can process the image correctly.
-        # The face crop is resized later for embedding extraction.
-        return np.ascontiguousarray(image)
+        # BGR uint8 (InsightFace / OpenCV convention)
+        return image
 
     def detect_faces(self, image: np.ndarray) -> list[tuple[int, int, int, int]]:
         """
