@@ -16,21 +16,21 @@ Las opciones que evalué:
 
 ## 2. Fine-tuning
 
-No entrené ni ajusté el backbone. Uso ArcFace tal cual, por transferencia de aprendizaje pura: ya está resuelto para el problema de identificación facial en general, entrenado sobre datasets con millones de identidades.
+No entrené ni ajusté el backbone. Utilicé ArcFace tal cual, por transferencia de aprendizaje pura: ya está resuelto para el problema de identificación facial en general, entrenado sobre datasets con millones de identidades.
 
 Las razones:
 
 - El dataset es chico (127 imágenes, 5 clases) y hacer fine-tuning ahí es casi garantía de overfitting.
 - No hacía falta: el modelo pre-entrenado ya separa perfecto las identidades del dataset (accuracy 1.00 en test), así que no había margen de mejora real que justificara tocar los pesos.
-- El costo: entrenar un backbone de este tamaño pide GPU y tiempo que no tenía disponible, sin garantías de que mejore algo con tan pocos datos.
+- El costo de entrenar un backbone de este tamaño pide GPU y tiempo que no tenía disponible (no dispongo de GPU dedicada), sin garantías de que mejore algo con tan pocos datos.
 
 ## 3. Dataset
 
-Armé un dataset propio de 127 imágenes con 5 personas (Agustina, Guillermo, Isabel, Matías, Vicky), entre 24 y 26 fotos por persona. Las saqué variando pose, luz y expresión, dentro de lo que se puede lograr con celular en casa.
+Armé un dataset propio de 127 imágenes con 5 personas, familiares (Agustina, Guillermo, Isabel, Matías, Vicky), entre 25 y 26 fotos por persona para garantizar dataset balanceados. Corresponden a imágenes que varían en pose, luz y expresión, dentro de lo que se puede lograr con celular en casa con distintas calidades de cámara.
 
-También probé sumar LFW (fetch_lfw_people, 1288 imágenes, 7 personas públicas), pero terminé descartándolo. Las imágenes de LFW vienen en 125x94 px con un crop muy cerrado que no llega a mostrar el mentón, y RetinaFace necesita ver la cara completa para poder detectarla bien. Probé agrandar las imágenes (resize a 400px con LANCZOS) y bajar el umbral de detección (det_thresh=0.2), pero no sirvió — el problema no era de resolución ni de confianza del detector, era que directamente faltaba estructura facial en el crop. Así que me quedé solo con el dataset propio.
+También probé sumar LFW (fetch_lfw_people, 1288 imágenes, 7 personas públicas), pero terminé descartándolo. Las imágenes de LFW vienen en 125x94 px con un crop muy cerrado que no llega a mostrar el mentón, y RetinaFace necesita ver la cara completa para poder detectarla bien. Probé agrandar las imágenes (resize a 400px con LANCZOS) y bajar el umbral de detección (det_thresh=0.2), pero no sirvió , el problema no era de resolución ni de confianza del detector, era que directamente faltaba estructura facial en el crop. Así que me quedé solo con el dataset propio.
 
-Durante el registro, si una imagen no tiene exactamente una cara detectada (0 o 2+), se descarta sola y queda anotado en el log, no se fuerza.
+Durante el registro, si una imagen no tiene exactamente una cara detectada (0 o 2+), se descarta.
 
 Para el split, separé 5 imágenes por persona para test (25 en total) en una carpeta aparte (dataset_tp1_test/), distinta de la carpeta de registro (dataset_tp1/, con las 102 restantes). Que la separación sea física y no solo lógica en memoria evita que se cuele contaminación entre train y test si vuelvo a correr el notebook.
 
@@ -48,9 +48,9 @@ Resultados sobre el test set (25 imágenes, 5 por persona):
 
 Accuracy global: 1.00 (25/25).
 
-Los scores de similitud individuales dieron entre 0.63 y 0.90 — nunca 1.0 exacto —, lo que confirma que las imágenes de test no son duplicados ni casi-duplicados del set de registro. Verifiqué a mano que ninguna imagen de test tuviera similitud mayor a 0.999 contra alguna de train, para descartar contaminación.
+Los scores de similitud individuales dieron entre 0.63 y 0.90 , nunca 1.0 exacto , lo que confirma que las imágenes de test no son duplicados ni imágenes demasiado similares a las del set de registro.
 
-El score más bajo fue 0.6267 (Vicky), con un margen de 0.08 sobre el umbral configurado (0.55) — el caso más ajustado de todo el test.
+El score más bajo fue 0.6267 (Vicky), con un margen de 0.08 sobre el umbral configurado (0.55), el caso más ajustado de todo el test (casi falso negativo / unknown).
 
 ## 5. Robustez y generalización
 
@@ -69,11 +69,11 @@ Como no hay entrenamiento de por medio, el data augmentation acá no se usó par
 
 ## 6. Arquitectura del sistema
 
-ArcFace recibe una imagen ya alineada y devuelve un embedding de 512 dimensiones. No sabe nada de identidades ni del conjunto de registro — es solo un extractor de características, no un clasificador.
+ArcFace recibe una imagen ya alineada y devuelve un embedding de 512 dimensiones. No sabe nada de identidades ni del conjunto de registro , es solo un extractor de características, no un clasificador.
 
 La lógica de identificación toma ese embedding, lo compara contra todos los embeddings guardados en PostgreSQL (con pgvector) usando similitud coseno, se queda con el más parecido, y chequea si supera el umbral configurado (SIMILARITY_THRESHOLD=0.55 en el .env). Si lo supera, devuelve la etiqueta correspondiente; si no, devuelve "unknown".
 
-Esto hace que una persona no registrada siempre dé "unknown", aunque esa persona exista en algún dataset público usado para pruebas — el sistema no clasifica sobre un conjunto fijo de clases, compara contra lo que esté efectivamente cargado en la base en ese momento.
+Esto hace que una persona no registrada siempre dé "unknown", aunque esa persona exista en algún dataset público usado para pruebas , el sistema no clasifica sobre un conjunto fijo de clases, compara contra lo que esté efectivamente cargado en la base en ese momento.
 
 Pipeline completo: detección (RetinaFace) → alineación (crop + landmarks, InsightFace) → embedding (ArcFace, 512D) → comparación (coseno contra pgvector) → identidad o "unknown".
 

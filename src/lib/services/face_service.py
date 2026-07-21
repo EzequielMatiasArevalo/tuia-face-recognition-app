@@ -33,7 +33,6 @@ class FaceService:
         self.output_path = output_path
         self.app = FaceAnalysis(name="buffalo_l", providers=["CPUExecutionProvider"])
         self.app.prepare(ctx_id=0, det_size=(640, 640))
-
         os.makedirs(self.output_path, exist_ok=True)
 
     @staticmethod
@@ -115,16 +114,9 @@ class FaceService:
                 break
 
         if matched is None:
-            crop = cv2.resize(image[y1:y2, x1:x2], (self.face_size, self.face_size))
-            return AlignedFace(
-                bbox=np.array([x1, y1, x2, y2]),
-                keypoints=np.empty((0, 2), dtype=np.int32),
-                image=crop,
-                embedding=None,
-            )
+            raise ValueError("No matching detection found for the given box.")
 
         kps = matched.kps.astype(np.int32) if matched.kps is not None else np.empty((0, 2), dtype=np.int32)
-
         return AlignedFace(
             bbox=np.array([x1, y1, x2, y2]),
             keypoints=kps,
