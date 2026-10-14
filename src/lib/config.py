@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     data_path: Path = Path(os.getenv("DATA_PATH", "data"))
     output_path: Path = Path(os.getenv("OUTPUT_PATH", "output"))
     model_path: Path = Path(os.getenv("MODEL_PATH", "lib/models"))
+    detector_model_name: str | None = os.getenv("DETECTOR_MODEL_NAME") or None
+    det_score_threshold: float = os.getenv("DET_SCORE_THRESHOLD", 0.5)
+    det_input_size: int = os.getenv("DET_INPUT_SIZE", 640)
+    min_face_size: int = os.getenv("MIN_FACE_SIZE", 20)
+    align_margin: float = os.getenv("ALIGN_MARGIN", 0.5)
     max_workers: int = os.getenv("MAX_WORKERS", 2)
     face_size: int = os.getenv("FACE_SIZE", 112)
     embedding_dim: int = os.getenv("EMBEDDING_DIM", 512)

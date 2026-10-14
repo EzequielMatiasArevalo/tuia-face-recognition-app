@@ -51,12 +51,24 @@ def _resolved_model_path() -> Path:
     return base
 
 
+def _resolved_detector_path() -> Path | None:
+    """DETECTOR_MODEL_NAME is optional: unset means the detector does not need a file."""
+    name = (settings.detector_model_name or "").strip()
+    return settings.model_path / name if name else None
+
+
 face_service = FaceService(
     store=embedding_store,
     similarity_metric=settings.similarity_metric,
     similarity_threshold=settings.similarity_threshold,
     face_size=settings.face_size,
     model_path=_resolved_model_path(),
+    output_path=settings.output_path,
+    detector_path=_resolved_detector_path(),
+    det_score_threshold=settings.det_score_threshold,
+    det_input_size=settings.det_input_size,
+    min_face_size=settings.min_face_size,
+    align_margin=settings.align_margin,
 )
 
 

@@ -25,6 +25,11 @@ class FaceService:
         face_size: int,
         model_path: Path,
         output_path: Path = Path("output"),
+        detector_path: Path | None = None,
+        det_score_threshold: float = 0.5,
+        det_input_size: int = 640,
+        min_face_size: int = 20,
+        align_margin: float = 0.5,
     ) -> None:
         self.store = store
         self.similarity_metric = similarity_metric
@@ -32,6 +37,11 @@ class FaceService:
         self.face_size = face_size
         self.model: any = self._load_model(model_path)
         self.output_path = output_path
+        self.det_score_threshold = det_score_threshold
+        self.det_input_size = det_input_size
+        self.min_face_size = min_face_size
+        self.align_margin = align_margin
+        self.detector: any = self._load_detector(detector_path)
 
         os.makedirs(self.output_path, exist_ok=True)
 
@@ -70,6 +80,18 @@ class FaceService:
             return onnxruntime.InferenceSession(str(mp))
         raise ValueError(f"Unsupported model format (expected .pth or .onnx): {model_path}")
 
+    def _load_detector(self, detector_path: Path | None) -> any:
+        """
+        Load the face detector once (called from __init__).
+        By default loads a .pth / .onnx file from DETECTOR_MODEL_NAME, or returns None
+        when it is not set. Override it if your detector comes from a library
+        (InsightFace, OpenCV YuNet, MTCNN, etc.) and configure it with
+        self.det_score_threshold and self.det_input_size.
+        """
+        if detector_path is None:
+            return None
+        return self._load_model(detector_path)
+
     def _load_image(self, source_path: str) -> np.ndarray:
         image = cv2.imread(source_path)
         if image is None:
@@ -84,6 +106,14 @@ class FaceService:
         """
         raise NotImplementedError("Not implemented")
 
+    @staticmethod
+    def _iou(a: np.ndarray, b: np.ndarray) -> float:
+        """Intersection over union between two boxes (x1, y1, x2, y2)."""
+        ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
+        ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
+        inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+        union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+        return float(inter / union) if union > 0 else 0.0
 
     def align_face(
         self, image: np.ndarray, box: tuple[int, int, int, int]
