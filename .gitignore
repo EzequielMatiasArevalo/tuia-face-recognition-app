@@ -12,3 +12,4 @@ model/*
 data/*
 .DS_Store
 src/output/*
+!src/output/.gitkeep

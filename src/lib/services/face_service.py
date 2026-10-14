@@ -27,7 +27,7 @@ class FaceService:
         face_size: int,
         model_path: Path,
         output_path: Path = Path("output"),
-        detector_path: Path = Path("models/det_10g.onnx"),
+        detector_path: Path | None = None,
         det_score_threshold: float = 0.5,
         det_input_size: int = 640,
         min_face_size: int = 20,
@@ -39,11 +39,11 @@ class FaceService:
         self.face_size = face_size
         self.model: any = self._load_model(model_path)
         self.output_path = output_path
+        self.det_score_threshold = det_score_threshold
+        self.det_input_size = det_input_size
         self.min_face_size = min_face_size
         self.align_margin = align_margin
-        self.detector = self._load_detector(
-            detector_path, det_score_threshold, det_input_size
-        )
+        self.detector: any = self._load_detector(detector_path)
 
         os.makedirs(self.output_path, exist_ok=True)
 
@@ -82,17 +82,18 @@ class FaceService:
             return onnxruntime.InferenceSession(str(mp))
         raise ValueError(f"Unsupported model format (expected .pth or .onnx): {model_path}")
 
-    @staticmethod
-    def _load_detector(detector_path: Path, det_score_threshold: float, det_input_size: int) -> any:
-        dp = Path(detector_path)
-        if not dp.exists():
+    def _load_detector(self, detector_path: Path | None) -> any:
+        """
+        Load the face detector once (called from __init__).
+        SCRFD (InsightFace): returns boxes with score and 5 landmarks per face.
+        """
+        if detector_path is None or not Path(detector_path).exists():
             raise ValueError(f"Detector path does not exist: {detector_path}")
-        # SCRFD (InsightFace): devuelve cajas con score y 5 landmarks por rostro
-        detector = get_model(str(dp), providers=["CPUExecutionProvider"])
+        detector = get_model(str(detector_path), providers=["CPUExecutionProvider"])
         detector.prepare(
             ctx_id=-1,
-            input_size=(det_input_size, det_input_size),
-            det_thresh=det_score_threshold,
+            input_size=(self.det_input_size, self.det_input_size),
+            det_thresh=self.det_score_threshold,
         )
         return detector
 
@@ -102,7 +103,16 @@ class FaceService:
             raise ValueError(f"Could not read image: {source_path}")
         # BGR uint8 (InsightFace / OpenCV convention)
         return image
-
+    
+    @staticmethod
+    def _iou(a: np.ndarray, b: np.ndarray) -> float:
+        """Intersection over union between two boxes (x1, y1, x2, y2)."""
+        ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
+        ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
+        inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+        union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+        return float(inter / union) if union > 0 else 0.0
+    
     def detect_faces(self, image: np.ndarray) -> list[tuple[int, int, int, int]]:
         """
         Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
@@ -121,14 +131,6 @@ class FaceService:
                 )
             )
         return boxes
-
-    @staticmethod
-    def _iou(a: np.ndarray, b: np.ndarray) -> float:
-        ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
-        ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
-        inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
-        union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
-        return float(inter / union) if union > 0 else 0.0
 
     def align_face(
         self, image: np.ndarray, box: tuple[int, int, int, int]
