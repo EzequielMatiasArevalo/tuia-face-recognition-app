@@ -8,6 +8,8 @@ import cv2
 import numpy as np
 import torch
 import onnxruntime
+from insightface.model_zoo import get_model
+from insightface.utils import face_align
 from lib.schemas import EmbeddingRecord, FaceDetection, PredictResult, AlignedFace
 from lib.storage.base import EmbeddingStoreProtocol
 import os 
@@ -25,6 +27,11 @@ class FaceService:
         face_size: int,
         model_path: Path,
         output_path: Path = Path("output"),
+        detector_path: Path = Path("models/det_10g.onnx"),
+        det_score_threshold: float = 0.5,
+        det_input_size: int = 640,
+        min_face_size: int = 20,
+        align_margin: float = 0.5,
     ) -> None:
         self.store = store
         self.similarity_metric = similarity_metric
@@ -32,6 +39,11 @@ class FaceService:
         self.face_size = face_size
         self.model: any = self._load_model(model_path)
         self.output_path = output_path
+        self.min_face_size = min_face_size
+        self.align_margin = align_margin
+        self.detector = self._load_detector(
+            detector_path, det_score_threshold, det_input_size
+        )
 
         os.makedirs(self.output_path, exist_ok=True)
 
@@ -70,6 +82,20 @@ class FaceService:
             return onnxruntime.InferenceSession(str(mp))
         raise ValueError(f"Unsupported model format (expected .pth or .onnx): {model_path}")
 
+    @staticmethod
+    def _load_detector(detector_path: Path, det_score_threshold: float, det_input_size: int) -> any:
+        dp = Path(detector_path)
+        if not dp.exists():
+            raise ValueError(f"Detector path does not exist: {detector_path}")
+        # SCRFD (InsightFace): devuelve cajas con score y 5 landmarks por rostro
+        detector = get_model(str(dp), providers=["CPUExecutionProvider"])
+        detector.prepare(
+            ctx_id=-1,
+            input_size=(det_input_size, det_input_size),
+            det_thresh=det_score_threshold,
+        )
+        return detector
+
     def _load_image(self, source_path: str) -> np.ndarray:
         image = cv2.imread(source_path)
         if image is None:
@@ -82,8 +108,27 @@ class FaceService:
         Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
         Return a list of tuples with the coordinates of the faces detected in the image.
         """
-        raise NotImplementedError("Not implemented")
+        height, width = image.shape[:2]
+        bboxes, _ = self.detector.detect(image, max_num=0)
+        boxes: list[tuple[int, int, int, int]] = []
+        for x1, y1, x2, y2, _score in bboxes:
+            if min(x2 - x1, y2 - y1) < self.min_face_size:
+                continue
+            boxes.append(
+                self._clip_xyxy(
+                    int(round(x1)), int(round(y1)), int(round(x2)), int(round(y2)),
+                    height, width,
+                )
+            )
+        return boxes
 
+    @staticmethod
+    def _iou(a: np.ndarray, b: np.ndarray) -> float:
+        ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
+        ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
+        inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+        union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+        return float(inter / union) if union > 0 else 0.0
 
     def align_face(
         self, image: np.ndarray, box: tuple[int, int, int, int]
@@ -92,15 +137,56 @@ class FaceService:
         Crop using box (x1, y1, x2, y2) and run FaceAnalysis on the crop.
         Return an AlignedFace object.
         """
-        raise NotImplementedError("Not implemented")
+        height, width = image.shape[:2]
+        x1, y1, x2, y2 = box
+
+        # Recorte con margen alrededor de la caja para que el detector encuentre los landmarks
+        mx = int((x2 - x1) * self.align_margin)
+        my = int((y2 - y1) * self.align_margin)
+        cx1, cy1, cx2, cy2 = self._clip_xyxy(x1 - mx, y1 - my, x2 + mx, y2 + my, height, width)
+        crop = image[cy1:cy2, cx1:cx2]
+
+        bboxes, kpss = self.detector.detect(crop, max_num=0)
+        if len(bboxes) == 0 or kpss is None:
+            # Sin landmarks no se puede alinear: se usa el recorte de la caja redimensionado
+            logger.warning(f"No landmarks found for box {box}; using unaligned crop")
+            face_img = cv2.resize(image[y1:y2, x1:x2], (self.face_size, self.face_size))
+            return AlignedFace(bbox=box, keypoints=None, image=face_img)
+
+        # Quedarse con la detección del recorte que mejor coincide con la caja original
+        target = np.array([x1 - cx1, y1 - cy1, x2 - cx1, y2 - cy1], dtype=np.float32)
+        best = max(range(len(bboxes)), key=lambda i: self._iou(bboxes[i, :4], target))
+        kps = kpss[best] + np.array([cx1, cy1], dtype=np.float32)
+
+        # Transformación de similitud hacia la plantilla ArcFace (misma que en entrenamiento)
+        face_img = face_align.norm_crop(image, landmark=kps, image_size=self.face_size)
+        return AlignedFace(
+            bbox=box,
+            keypoints=kps - np.array([x1, y1], dtype=np.float32),
+            image=face_img,
+        )
 
     def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
         """
         Extract embedding from face.
         Return a list of floats representing the embedding of the face.
         """
-        raise NotImplementedError("Not implemented")
-        
+        if face.embedding is not None:
+            return face.embedding
+
+        # Preprocesamiento ArcFace: BGR->RGB, (x - 127.5) / 127.5, HWC->NCHW
+        blob = cv2.dnn.blobFromImage(
+            face.image,
+            scalefactor=1.0 / 127.5,
+            size=(self.face_size, self.face_size),
+            mean=(127.5, 127.5, 127.5),
+            swapRB=True,
+        )
+        input_name = self.model.get_inputs()[0].name
+        emb = self.model.run(None, {input_name: blob})[0][0]
+        emb = emb / (np.linalg.norm(emb) + 1e-12)
+        return emb.astype(float).tolist()
+
     def _cosine(self, a: np.ndarray, b: np.ndarray) -> float:
         denom = np.linalg.norm(a) * np.linalg.norm(b)
         if denom == 0:

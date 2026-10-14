@@ -57,6 +57,12 @@ face_service = FaceService(
     similarity_threshold=settings.similarity_threshold,
     face_size=settings.face_size,
     model_path=_resolved_model_path(),
+    output_path=settings.output_path,
+    detector_path=settings.model_path / settings.detector_model_name,
+    det_score_threshold=settings.det_score_threshold,
+    det_input_size=settings.det_input_size,
+    min_face_size=settings.min_face_size,
+    align_margin=settings.align_margin,
 )
 
 
