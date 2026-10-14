@@ -98,14 +98,7 @@ class FaceService:
             raise ValueError(f"Could not read image: {source_path}")
         # BGR uint8 (InsightFace / OpenCV convention)
         return image
-
-    def detect_faces(self, image: np.ndarray) -> list[tuple[int, int, int, int]]:
-        """
-        Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
-        Return a list of tuples with the coordinates of the faces detected in the image.
-        """
-        raise NotImplementedError("Not implemented")
-
+    
     @staticmethod
     def _iou(a: np.ndarray, b: np.ndarray) -> float:
         """Intersection over union between two boxes (x1, y1, x2, y2)."""
@@ -114,6 +107,14 @@ class FaceService:
         inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
         union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
         return float(inter / union) if union > 0 else 0.0
+    
+    def detect_faces(self, image: np.ndarray) -> list[tuple[int, int, int, int]]:
+        """
+        Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
+        Return a list of tuples with the coordinates of the faces detected in the image.
+        """
+        raise NotImplementedError("Not implemented")
+
 
     def align_face(
         self, image: np.ndarray, box: tuple[int, int, int, int]
