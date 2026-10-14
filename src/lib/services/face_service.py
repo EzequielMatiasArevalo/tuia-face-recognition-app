@@ -8,6 +8,8 @@ import cv2
 import numpy as np
 import torch
 import onnxruntime
+from insightface.model_zoo import get_model
+from insightface.utils import face_align
 from lib.schemas import EmbeddingRecord, FaceDetection, PredictResult, AlignedFace
 from lib.storage.base import EmbeddingStoreProtocol
 import os 
@@ -83,14 +85,17 @@ class FaceService:
     def _load_detector(self, detector_path: Path | None) -> any:
         """
         Load the face detector once (called from __init__).
-        By default loads a .pth / .onnx file from DETECTOR_MODEL_NAME, or returns None
-        when it is not set. Override it if your detector comes from a library
-        (InsightFace, OpenCV YuNet, MTCNN, etc.) and configure it with
-        self.det_score_threshold and self.det_input_size.
+        SCRFD (InsightFace): returns boxes with score and 5 landmarks per face.
         """
-        if detector_path is None:
-            return None
-        return self._load_model(detector_path)
+        if detector_path is None or not Path(detector_path).exists():
+            raise ValueError(f"Detector path does not exist: {detector_path}")
+        detector = get_model(str(detector_path), providers=["CPUExecutionProvider"])
+        detector.prepare(
+            ctx_id=-1,
+            input_size=(self.det_input_size, self.det_input_size),
+            det_thresh=self.det_score_threshold,
+        )
+        return detector
 
     def _load_image(self, source_path: str) -> np.ndarray:
         image = cv2.imread(source_path)
@@ -113,8 +118,19 @@ class FaceService:
         Each box is (x1, y1, x2, y2) in pixels (InsightFace convention).
         Return a list of tuples with the coordinates of the faces detected in the image.
         """
-        raise NotImplementedError("Not implemented")
-
+        height, width = image.shape[:2]
+        bboxes, _ = self.detector.detect(image, max_num=0)
+        boxes: list[tuple[int, int, int, int]] = []
+        for x1, y1, x2, y2, _score in bboxes:
+            if min(x2 - x1, y2 - y1) < self.min_face_size:
+                continue
+            boxes.append(
+                self._clip_xyxy(
+                    int(round(x1)), int(round(y1)), int(round(x2)), int(round(y2)),
+                    height, width,
+                )
+            )
+        return boxes
 
     def align_face(
         self, image: np.ndarray, box: tuple[int, int, int, int]
@@ -123,15 +139,56 @@ class FaceService:
         Crop using box (x1, y1, x2, y2) and run FaceAnalysis on the crop.
         Return an AlignedFace object.
         """
-        raise NotImplementedError("Not implemented")
+        height, width = image.shape[:2]
+        x1, y1, x2, y2 = box
+
+        # Recorte con margen alrededor de la caja para que el detector encuentre los landmarks
+        mx = int((x2 - x1) * self.align_margin)
+        my = int((y2 - y1) * self.align_margin)
+        cx1, cy1, cx2, cy2 = self._clip_xyxy(x1 - mx, y1 - my, x2 + mx, y2 + my, height, width)
+        crop = image[cy1:cy2, cx1:cx2]
+
+        bboxes, kpss = self.detector.detect(crop, max_num=0)
+        if len(bboxes) == 0 or kpss is None:
+            # Sin landmarks no se puede alinear: se usa el recorte de la caja redimensionado
+            logger.warning(f"No landmarks found for box {box}; using unaligned crop")
+            face_img = cv2.resize(image[y1:y2, x1:x2], (self.face_size, self.face_size))
+            return AlignedFace(bbox=box, keypoints=None, image=face_img)
+
+        # Quedarse con la detección del recorte que mejor coincide con la caja original
+        target = np.array([x1 - cx1, y1 - cy1, x2 - cx1, y2 - cy1], dtype=np.float32)
+        best = max(range(len(bboxes)), key=lambda i: self._iou(bboxes[i, :4], target))
+        kps = kpss[best] + np.array([cx1, cy1], dtype=np.float32)
+
+        # Transformación de similitud hacia la plantilla ArcFace (misma que en entrenamiento)
+        face_img = face_align.norm_crop(image, landmark=kps, image_size=self.face_size)
+        return AlignedFace(
+            bbox=box,
+            keypoints=kps - np.array([x1, y1], dtype=np.float32),
+            image=face_img,
+        )
 
     def extract_embedding_from_face(self, face: AlignedFace) -> list[float]:
         """
         Extract embedding from face.
         Return a list of floats representing the embedding of the face.
         """
-        raise NotImplementedError("Not implemented")
-        
+        if face.embedding is not None:
+            return face.embedding
+
+        # Preprocesamiento ArcFace: BGR->RGB, (x - 127.5) / 127.5, HWC->NCHW
+        blob = cv2.dnn.blobFromImage(
+            face.image,
+            scalefactor=1.0 / 127.5,
+            size=(self.face_size, self.face_size),
+            mean=(127.5, 127.5, 127.5),
+            swapRB=True,
+        )
+        input_name = self.model.get_inputs()[0].name
+        emb = self.model.run(None, {input_name: blob})[0][0]
+        emb = emb / (np.linalg.norm(emb) + 1e-12)
+        return emb.astype(float).tolist()
+
     def _cosine(self, a: np.ndarray, b: np.ndarray) -> float:
         denom = np.linalg.norm(a) * np.linalg.norm(b)
         if denom == 0:
